@@ -1,0 +1,80 @@
+{
+  "version": "inntris-highnote-mandate-snapshot-v1",
+  "generated_at": "2026-08-12T10:00:00.000Z",
+  "records": [
+    {
+      "payment_card_id": "card_allow_001",
+      "organisation_id": "org_demo",
+      "principal_id": "org_demo",
+      "agent_id": "agent_procurement_01",
+      "mandate_id": "mandate_procurement_2026",
+      "purpose": "business_services",
+      "state": "APPROVED",
+      "valid_from": "2026-01-01T00:00:00.000Z",
+      "valid_until": "2030-01-01T00:00:00.000Z",
+      "policy": {
+        "version": "1",
+        "currency": "USD",
+        "max_amount_minor": "10000",
+        "allowed_merchant_ids": ["merchant_allowed_001"],
+        "allowed_merchant_category_codes": ["7399"]
+      }
+    },
+    {
+      "payment_card_id": "card_simulator_001",
+      "organisation_id": "org_demo",
+      "principal_id": "org_demo",
+      "agent_id": "agent_procurement_01",
+      "mandate_id": "mandate_simulator_2026",
+      "purpose": "business_services",
+      "state": "APPROVED",
+      "valid_from": "2026-01-01T00:00:00.000Z",
+      "valid_until": "2030-01-01T00:00:00.000Z",
+      "policy": {
+        "version": "1",
+        "currency": "USD",
+        "max_amount_minor": "10000",
+        "allowed_merchant_ids": [],
+        "allowed_merchant_names": ["HIGHNOTE_PLATFORM"],
+        "allowed_merchant_category_codes": [],
+        "allowed_merchant_categories": ["GENERAL_SERVICES"]
+      }
+    },
+    {
+      "payment_card_id": "card_approval_001",
+      "organisation_id": "org_demo",
+      "principal_id": "org_demo",
+      "agent_id": "agent_procurement_01",
+      "mandate_id": "mandate_approval_2026",
+      "purpose": "business_services",
+      "state": "REQUIRES_APPROVAL",
+      "valid_from": "2026-01-01T00:00:00.000Z",
+      "valid_until": "2030-01-01T00:00:00.000Z",
+      "policy": {
+        "version": "1",
+        "currency": "USD",
+        "max_amount_minor": "10000",
+        "allowed_merchant_ids": ["merchant_allowed_001"],
+        "allowed_merchant_category_codes": ["7399"]
+      }
+    },
+    {
+      "payment_card_id": "card_expired_001",
+      "organisation_id": "org_demo",
+      "principal_id": "org_demo",
+      "agent_id": "agent_procurement_01",
+      "mandate_id": "mandate_expired_2025",
+      "purpose": "business_services",
+      "state": "APPROVED",
+      "valid_from": "2025-01-01T00:00:00.000Z",
+      "valid_until": "2026-01-01T00:00:00.000Z",
+      "policy": {
+        "version": "1",
+        "currency": "USD",
+        "max_amount_minor": "10000",
+        "allowed_merchant_ids": ["merchant_allowed_001"],
+        "allowed_merchant_category_codes": ["7399"]
+      }
+    }
+  ]
+}
