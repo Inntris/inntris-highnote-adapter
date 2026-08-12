@@ -1,0 +1,6 @@
+dist
+coverage
+node_modules
+AGENTS.md
+fixtures/**/*.json
+fixtures/**/*.zip

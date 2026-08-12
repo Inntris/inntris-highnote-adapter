@@ -1,0 +1,10 @@
+.git
+.github
+node_modules
+dist
+coverage
+evidence-output
+fixtures
+test
+docs
+*.md
