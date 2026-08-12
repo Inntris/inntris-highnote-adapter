@@ -51,6 +51,8 @@ export async function buildOfflineEvidencePack(input: {
   };
   return zipSync(archiveEntries, {
     level: 9,
-    mtime: new Date("1980-01-01T00:00:00.000Z"),
+    // ZIP stores a timezone-free DOS timestamp. Constructing the same local
+    // calendar time avoids environment-dependent bytes across CI and Windows.
+    mtime: new Date(1980, 0, 1, 0, 0, 0),
   });
 }
