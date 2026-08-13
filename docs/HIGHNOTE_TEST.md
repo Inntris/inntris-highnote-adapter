@@ -4,7 +4,7 @@ This runbook is for Highnote Test only. Use dummy data. Do not put production or
 
 ## Current state
 
-The deterministic local adapter, fixtures and offline verification are complete. The live Test gate remains open: endpoint activation has not yet reported `ACTIVE`, and no Highnote Test authorisation simulation has been exercised end to end.
+The deterministic local adapter, fixtures and offline verification are complete. Highnote Test endpoint activation is confirmed `Active`. The remaining live Test gate is an end-to-end authorisation exercise; the configured card product had no Account Holders or payment cards when activation was verified.
 
 ## Observed Highnote Test endpoint activation attempt, 13 August 2026
 
@@ -88,7 +88,7 @@ Highnote verifies a registered endpoint with a signed ping probe, not with an au
 
 ### How the adapter answers a probe
 
-`HighnoteEndpointPingSchema` is a second strictly validated message type on the same authenticated boundary. It is **not** an activation bypass:
+`HighnoteEndpointPingSchema` is a separately validated message type on the same authenticated boundary. It is **not** an activation bypass:
 
 - The probe is answered only after the same `verifyHighnoteAuthenticity` check an authorisation request must pass. An unsigned or wrongly signed probe is rejected 401.
 - The same freshness window applies. A stale probe is rejected 401.
@@ -99,11 +99,11 @@ Highnote verifies a registered endpoint with a signed ping probe, not with an au
 
 Verified locally through the HTTP route: signed probe with opaque metadata 200 `{"ping":"ok"}`; unsigned probe 401 `INVALID_SIGNATURE`; stale probe 401 `STALE_REQUEST`; probe carrying authorisation markers 400; empty authorisation request 400; malformed JSON 400; body over 256 KiB 413.
 
-### Still unverified
+### Activation success, 13 August 2026 21:12:49 GMT+2
 
-The response body Highnote expects for a probe is not documented. The adapter returns HTTP 200 with `{"ping":"ok"}` on the basis that the documented requirement is only that the endpoint can return 2XX. If activation still fails with a 200 recorded in the adapter logs, the response body is the next thing to confirm with Highnote.
+Highnote sent a fresh signed probe to the Railway deployment serving merged commit `1ad24cc`. The adapter logged `Highnote endpoint verification ping acknowledged`, classified the ping value as a string and returned HTTP 200 in 4.58 ms. Live metrics then reported one valid Highnote verification and one terminal ping result.
 
-Activation is still **not** confirmed. Do not record it as passed until Highnote reports `ACTIVE`.
+The Highnote dashboard reported **Inntris Highnote Adapter Test** as `Active` at the registered HTTPS endpoint. This confirms Test endpoint activation and the response body used by the adapter. It does not establish a Highnote Live deployment or a completed authorisation simulation.
 
 ## Prepare the adapter
 
@@ -190,7 +190,7 @@ Record no secrets. Preserve:
 
 - [x] Highnote Test request reached the deployed adapter (activation POST, 13 August 2026)
 - [x] HMAC encoding confirmed from an observed request: the activation POST passed hex HMAC verification
-- [ ] Highnote Test endpoint status reported `ACTIVE`
+- [x] Highnote Test endpoint status reported `Active` on 13 August 2026 after a signed fresh probe received HTTP 200
 - [ ] ALLOW simulation passed
 - [ ] BLOCK simulation passed
 - [ ] unmapped card returned a 2xx decline rather than a non-2xx stand-in delegation
