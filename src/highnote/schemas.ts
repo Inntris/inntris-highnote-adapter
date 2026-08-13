@@ -158,25 +158,75 @@ export const CollaborativeAuthorizationRequestSchema = z
  * Highnote's endpoint activation verification probe.
  *
  * Observed on 13 August 2026: an HMAC signed POST whose
- * `data.collaborativeAuthorizationRequest` carries a single `ping` key and
- * nothing else, alongside a normal `extensions.signatureTimestamp`. It carries
- * no payment card, amount or merchant, so there is no organisational authority
- * question to answer, no mandate to resolve and no evidence to bind.
+ * `data.collaborativeAuthorizationRequest` carries `ping` as its first reported
+ * key, alongside a normal `extensions.signatureTimestamp`. Railway's
+ * structured log rendering exposed only the first member of Zod's key array,
+ * so additional opaque probe metadata cannot be ruled out. The message carries
+ * none of the transaction, card, amount or merchant fields that identify an
+ * authorisation request.
  *
- * This is a second strictly validated message type on the same authenticated
+ * This is a separately validated message type on the same authenticated
  * boundary, not a bypass. A probe is acknowledged only after it passes the same
  * signature verification and the same freshness window that an authorisation
  * request must pass.
  *
- * The `ping` value is undocumented and is never read as a policy input, so it
- * is accepted as an unknown JSON value. The key must be present and no other
- * key is allowed, so a truncated, empty or otherwise malformed authorisation
- * request cannot match this shape and be answered with a 2xx.
+ * The `ping` value and any accompanying probe metadata are undocumented and
+ * are never read as policy inputs. The schema therefore preserves opaque probe
+ * metadata, while its refinement rejects every transaction-bearing marker and
+ * the PaymentCardAuthorizationRequest typename. A malformed authorisation that
+ * carries `ping` therefore cannot be reclassified as a probe and answered with
+ * a 2xx.
  */
+const AuthorizationRequestMarkerKeys = [
+  "transaction",
+  "transactionTimestamp",
+  "paymentCard",
+  "transactionAmount",
+  "settlementAmount",
+  "requestedAmount",
+  "surchargeFee",
+  "merchantDetails",
+  "responseCode",
+  "avsResponseCode",
+  "postalCodeResponseCode",
+  "cvvResponseCode",
+  "pointOfServiceDetails",
+  "pointOfSaleDetails",
+  "networkRetrievalReferenceNumber",
+  "additionalNetworkData",
+  "cashBackAmount",
+  "createdAt",
+] as const;
+
+const HighnoteEndpointPingPayloadSchema = z
+  .object({
+    ping: z.unknown(),
+    __typename: z.string().min(1).max(128).optional(),
+  })
+  .passthrough()
+  .superRefine((value, context) => {
+    if (value.__typename === "PaymentCardAuthorizationRequest") {
+      context.addIssue({
+        code: "custom",
+        path: ["__typename"],
+        message: "An authorisation request cannot be treated as an endpoint probe",
+      });
+    }
+    for (const key of AuthorizationRequestMarkerKeys) {
+      if (Object.hasOwn(value, key)) {
+        context.addIssue({
+          code: "custom",
+          path: [key],
+          message: "An authorisation request cannot be treated as an endpoint probe",
+        });
+      }
+    }
+  });
+
 export const HighnoteEndpointPingSchema = z
   .object({
     data: z
-      .object({ collaborativeAuthorizationRequest: z.object({ ping: z.unknown() }).strict() })
+      .object({ collaborativeAuthorizationRequest: HighnoteEndpointPingPayloadSchema })
       .strict(),
     extensions: z.object({ signatureTimestamp: z.number().int().nonnegative().safe() }).strict(),
   })

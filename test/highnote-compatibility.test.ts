@@ -240,10 +240,54 @@ describe("Highnote endpoint verification ping schema", () => {
     ).toBe(false);
   });
 
-  it("rejects any key beside ping", () => {
+  it("accepts opaque metadata beside ping", () => {
     expect(
       HighnoteEndpointPingSchema.safeParse({
         data: { collaborativeAuthorizationRequest: { ping: true, nonce: "abc" } },
+        extensions: { signatureTimestamp: 1_786_640_521_401 },
+      }).success,
+    ).toBe(true);
+  });
+
+  it("rejects every authorisation marker beside ping", () => {
+    for (const marker of [
+      "transaction",
+      "paymentCard",
+      "transactionAmount",
+      "settlementAmount",
+      "requestedAmount",
+      "surchargeFee",
+      "merchantDetails",
+      "responseCode",
+      "transactionTimestamp",
+      "avsResponseCode",
+      "postalCodeResponseCode",
+      "cvvResponseCode",
+      "pointOfServiceDetails",
+      "pointOfSaleDetails",
+      "networkRetrievalReferenceNumber",
+      "additionalNetworkData",
+      "cashBackAmount",
+      "createdAt",
+    ]) {
+      expect(
+        HighnoteEndpointPingSchema.safeParse({
+          data: { collaborativeAuthorizationRequest: { ping: true, [marker]: null } },
+          extensions: { signatureTimestamp: 1_786_640_521_401 },
+        }).success,
+      ).toBe(false);
+    }
+  });
+
+  it("rejects the authorisation typename beside ping", () => {
+    expect(
+      HighnoteEndpointPingSchema.safeParse({
+        data: {
+          collaborativeAuthorizationRequest: {
+            ping: true,
+            __typename: "PaymentCardAuthorizationRequest",
+          },
+        },
         extensions: { signatureTimestamp: 1_786_640_521_401 },
       }).success,
     ).toBe(false);
