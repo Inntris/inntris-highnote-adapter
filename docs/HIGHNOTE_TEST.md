@@ -4,7 +4,44 @@ This runbook is for Highnote Test only. Use dummy data. Do not put production or
 
 ## Current state
 
-The deterministic local adapter, fixtures and offline verification are complete. A request from Highnote Test has not yet been observed in this repository. That live Test gate remains open until the steps below are executed and recorded.
+The deterministic local adapter, fixtures and offline verification are complete. The live Test gate remains open: endpoint activation has not yet reported `ACTIVE`, and no Highnote Test authorisation simulation has been exercised end to end.
+
+## Observed Highnote Test endpoint activation attempt, 13 August 2026
+
+A real Highnote Test endpoint activation POST reached the deployed adapter on Railway at `POST /v1/highnote/collaborative-authorization`. The observed outcome was:
+
+- Highnote reached the endpoint over HTTPS and used the registered route.
+- Raw-body HMAC verification passed. The request got past `verifyHighnoteAuthenticity` and into schema parsing, which is only reachable after a valid signature.
+- Strict request-schema parsing then failed. The adapter returned HTTP 400 with `INVALID_REQUEST_SCHEMA`.
+- Highnote reported `status = ACTIVATION_FAILED`.
+
+This is evidence about the request shape only. It says nothing about the signing secret, the signature header name, the `hex` signature encoding or the freshness window, all of which the request had already cleared. None of those were changed in response.
+
+### Why the shape differed
+
+Highnote's current documentation uses two names for the same point of sale semantics:
+
+- the simulation input uses `pointOfServiceDetails`
+- the documented callback example uses `pointOfSaleDetails`, alongside a top level `networkRetrievalReferenceNumber`
+
+The documented callback `pointOfSaleDetails` example carries `panEntryMode`, `pinEntryMode`, `terminalAttendance`, `isCardHolderPresent`, `isCardPresent`, `isRecurring` and `terminalSupportsPartialApproval`. It does not carry `category` or `cardDataInputCapability`.
+
+The adapter had modelled only `pointOfServiceDetails` and rejected everything else, so a request in the documented callback representation could not parse.
+
+### What changed
+
+The adapter now explicitly supports both documented representations while remaining strict:
+
+- `pointOfSaleDetails` is accepted through its own strict schema. `category` and `cardDataInputCapability` are modelled as explicit optional compatibility fields rather than assumed.
+- `networkRetrievalReferenceNumber` is accepted as an optional, nullable, bounded string. It is never read as an authority signal or policy input.
+- Unknown request fields and unknown point of sale fields still fail closed.
+- A request carrying both `pointOfServiceDetails` and `pointOfSaleDetails` is rejected as ambiguous, because the two objects could disagree on `terminalSupportsPartialApproval` and the adapter must not silently pick one reading.
+- `getPointOfServiceDetails(request)` reads whichever representation arrived. The parsed request is never rewritten, so evidence binding and the raw-byte hash are unaffected.
+- On a schema rejection the adapter logs sanitised diagnostics only: failing field paths, issue codes, expected type categories, unrecognised key names and the Highnote request ID when it can be read safely. Request values, signature material and payment data are never logged.
+
+Authentication, freshness and the HMAC-before-schema ordering were not modified. There is no activation special case: Highnote's activation verification traverses the same authenticated request boundary as normal Collaborative Authorization traffic.
+
+Activation has **not** been confirmed. Do not record activation as passed until a later real activation attempt actually reports `ACTIVE`.
 
 ## Prepare the adapter
 
@@ -89,8 +126,9 @@ Record no secrets. Preserve:
 
 ## Completion checklist
 
-- [ ] Highnote Test request reached the deployed adapter
-- [ ] HMAC encoding confirmed from an observed request or Highnote guidance
+- [x] Highnote Test request reached the deployed adapter (activation POST, 13 August 2026)
+- [x] HMAC encoding confirmed from an observed request: the activation POST passed hex HMAC verification
+- [ ] Highnote Test endpoint status reported `ACTIVE`
 - [ ] ALLOW simulation passed
 - [ ] BLOCK simulation passed
 - [ ] unmapped card returned a 2xx decline rather than a non-2xx stand-in delegation

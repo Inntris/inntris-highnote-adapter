@@ -5,6 +5,8 @@ import { AdapterError, type AuthorizationFailurePolicy } from "./errors.js";
 import type { EvidenceSink } from "./evidence/index.js";
 import {
   CollaborativeAuthorizationRequestSchema,
+  highnoteRequestIdFrom,
+  summariseSchemaIssues,
   verifyHighnoteAuthenticity,
   verifyHighnoteFreshness,
   type CollaborativeAuthorizationRequest,
@@ -200,8 +202,16 @@ export function buildApp(input: {
       return;
     }
     if ((error as { name?: string }).name === "ZodError") {
+      // Sanitised shape metadata only: failing field paths, issue codes,
+      // expected categories and unrecognised key names. No request values, no
+      // signature material and no payment data reach the log.
+      const requestId = highnoteRequestIdFrom(request.body);
       request.log.warn(
-        { error_code: "INVALID_REQUEST_SCHEMA" },
+        {
+          error_code: "INVALID_REQUEST_SCHEMA",
+          schema_issues: summariseSchemaIssues(error),
+          ...(requestId === undefined ? {} : { request_id: requestId }),
+        },
         "Request schema validation failed",
       );
       void reply.code(400).send({

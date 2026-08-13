@@ -10,8 +10,10 @@ import {
   clock,
   FIXED_NOW,
   HIGHNOTE_SECRET,
+  highnotePayload,
   highnoteRequest,
   signedBody,
+  signedPayload,
   signer,
   testProcessor,
 } from "./helpers.js";
@@ -80,6 +82,43 @@ describe("HTTP adapter", () => {
     });
     expect(response.statusCode).toBe(200);
     expect(response.json()).toMatchObject({ responseCode: "EXCEEDS_LIMIT" });
+  });
+
+  it("authorises a signed request in the documented Highnote callback representation", async () => {
+    // Reproduces the shape that reached the deployed adapter on 13 August 2026:
+    // HMAC verification passed and strict schema parsing then rejected the
+    // request as INVALID_REQUEST_SCHEMA. The same authenticated boundary is
+    // exercised here, with no activation special case.
+    const { instance, metrics } = await app();
+    const payload = highnotePayload({
+      pointOfSale: "sale",
+      networkRetrievalReferenceNumber: "020000654321",
+      requestId: "te_callback_001",
+    });
+    const { rawBody, signature } = signedPayload(payload);
+    const response = await post(instance, rawBody, signature);
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toEqual({
+      transaction: { id: "tx_allow_001" },
+      responseCode: "APPROVED",
+    });
+    const scraped = await metrics.registry.metrics();
+    // Authenticity, schema and freshness all passed, and the processor decided.
+    expect(scraped).toContain('highnote_request_verification_total{result="valid"} 1');
+    expect(scraped).toContain('policy_decision_total{verdict="ALLOW"} 1');
+    expect(scraped).toContain('requests_total{result="APPROVED"} 1');
+  });
+
+  it("rejects an authenticated request carrying both point of sale representations", async () => {
+    const { instance } = await app();
+    const { rawBody, signature } = signedPayload(
+      highnotePayload({ pointOfSale: "both", requestId: "te_ambiguous_001" }),
+    );
+    const response = await post(instance, rawBody, signature);
+    expect(response.statusCode).toBe(400);
+    expect(response.json()).toEqual({
+      error: { code: "INVALID_REQUEST_SCHEMA", message: "Request schema validation failed" },
+    });
   });
 
   it("rejects an invalid signature", async () => {

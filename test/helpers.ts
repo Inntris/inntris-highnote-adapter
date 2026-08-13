@@ -23,23 +23,52 @@ export async function testMandateStore(): Promise<SnapshotMandateStore> {
   return new SnapshotMandateStore(MandateSnapshotSchema.parse(JSON.parse(raw)));
 }
 
-export function highnoteRequest(
-  overrides: {
-    requestId?: string;
-    transactionId?: string;
-    paymentCardId?: string;
-    amount?: number;
-    currency?: string;
-    merchantId?: string | null;
-    merchantName?: string | null;
-    merchantCategoryCode?: string | null;
-    merchantCategory?: string | null;
-    preliminaryResponseCode?: "APPROVED" | "PARTIAL_AMOUNT_APPROVED" | null;
-    signatureTimestamp?: number;
-    terminalSupportsPartialApproval?: boolean;
-  } = {},
-): CollaborativeAuthorizationRequest {
-  return CollaborativeAuthorizationRequestSchema.parse({
+export interface HighnoteRequestOverrides {
+  requestId?: string;
+  transactionId?: string;
+  paymentCardId?: string;
+  amount?: number;
+  currency?: string;
+  merchantId?: string | null;
+  merchantName?: string | null;
+  merchantCategoryCode?: string | null;
+  merchantCategory?: string | null;
+  preliminaryResponseCode?: "APPROVED" | "PARTIAL_AMOUNT_APPROVED" | null;
+  signatureTimestamp?: number;
+  terminalSupportsPartialApproval?: boolean;
+  /**
+   * Which documented Highnote point of sale representation the payload carries.
+   * `service` is the simulation input shape and stays the default so generated
+   * fixtures remain byte identical.
+   */
+  pointOfSale?: "service" | "sale" | "both" | "none";
+  /**
+   * Present in the payload only when supplied, matching the optional field in
+   * the documented Highnote callback example.
+   */
+  networkRetrievalReferenceNumber?: string | null;
+}
+
+export interface HighnotePayload {
+  data: { collaborativeAuthorizationRequest: Record<string, unknown> };
+  extensions: { signatureTimestamp: number };
+}
+
+/** Builds an unvalidated Highnote request payload so schema failures can be exercised. */
+export function highnotePayload(overrides: HighnoteRequestOverrides = {}): HighnotePayload {
+  const representation = overrides.pointOfSale ?? "service";
+  const partialApproval = overrides.terminalSupportsPartialApproval ?? true;
+  // The seven fields shown in the documented Highnote callback example.
+  const documentedPointOfSale = {
+    panEntryMode: "CONTACTLESS_VIA_CHIP_RULES",
+    pinEntryMode: null,
+    terminalAttendance: "UNATTENDED",
+    isCardHolderPresent: false,
+    isCardPresent: false,
+    isRecurring: null,
+    terminalSupportsPartialApproval: partialApproval,
+  };
+  return {
     data: {
       collaborativeAuthorizationRequest: {
         __typename: "PaymentCardAuthorizationRequest",
@@ -91,17 +120,21 @@ export function highnoteRequest(
         avsResponseCode: "MATCH",
         postalCodeResponseCode: "MATCH",
         cvvResponseCode: "MATCH",
-        pointOfServiceDetails: {
-          panEntryMode: "CONTACTLESS_VIA_CHIP_RULES",
-          pinEntryMode: null,
-          terminalAttendance: "UNATTENDED",
-          isCardHolderPresent: false,
-          isCardPresent: false,
-          isRecurring: null,
-          terminalSupportsPartialApproval: overrides.terminalSupportsPartialApproval ?? true,
-          category: "ECOMMERCE",
-          cardDataInputCapability: "CONTACTLESS_READ_VIA_CHIP_RULES",
-        },
+        ...(representation === "service" || representation === "both"
+          ? {
+              pointOfServiceDetails: {
+                ...documentedPointOfSale,
+                category: "ECOMMERCE",
+                cardDataInputCapability: "CONTACTLESS_READ_VIA_CHIP_RULES",
+              },
+            }
+          : {}),
+        ...(representation === "sale" || representation === "both"
+          ? { pointOfSaleDetails: { ...documentedPointOfSale } }
+          : {}),
+        ...("networkRetrievalReferenceNumber" in overrides
+          ? { networkRetrievalReferenceNumber: overrides.networkRetrievalReferenceNumber }
+          : {}),
         additionalNetworkData: {
           __typename: "VisaData",
           retrievalReferenceNumber: "020000654321",
@@ -115,18 +148,29 @@ export function highnoteRequest(
     extensions: {
       signatureTimestamp: overrides.signatureTimestamp ?? FIXED_NOW.getTime(),
     },
-  });
+  };
+}
+
+export function highnoteRequest(
+  overrides: HighnoteRequestOverrides = {},
+): CollaborativeAuthorizationRequest {
+  return CollaborativeAuthorizationRequestSchema.parse(highnotePayload(overrides));
+}
+
+/** Signs the exact bytes of an arbitrary payload, valid or not. */
+export function signedPayload(payload: unknown): { rawBody: Buffer; signature: string } {
+  const rawBody = Buffer.from(canonicalise(payload), "utf8");
+  return {
+    rawBody,
+    signature: createHighnoteSignature(rawBody, HIGHNOTE_SECRET, "hex"),
+  };
 }
 
 export function signedBody(request: CollaborativeAuthorizationRequest): {
   rawBody: Buffer;
   signature: string;
 } {
-  const rawBody = Buffer.from(canonicalise(request), "utf8");
-  return {
-    rawBody,
-    signature: createHighnoteSignature(rawBody, HIGHNOTE_SECRET, "hex"),
-  };
+  return signedPayload(request);
 }
 
 export async function testProcessor(

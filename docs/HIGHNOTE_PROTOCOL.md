@@ -20,10 +20,13 @@ These notes were checked against current public Highnote documentation on 12 Aug
 - Point of sale details, additional network data and cashback are omitted when not applicable.
 - A partial authorised amount cannot exceed the requested amount and must use the same currency.
 - The documented Test simulator can omit `merchantId` and `categoryCode`, and its example has a null preliminary response code.
+- Point of sale semantics appear under two documented names: `pointOfServiceDetails` in the simulation input and `pointOfSaleDetails` in the callback example, which also carries a top level `networkRetrievalReferenceNumber`.
 
 ## Implemented interpretation
 
 The service verifies the HMAC against the exact received bytes before schema parsing. It never recreates JSON before signature verification.
+
+Both documented point of sale representations are accepted through their own strict schemas, and `getPointOfServiceDetails` reads whichever one arrived. The parsed request is never rewritten, so evidence binding and the raw-byte hash are unaffected. A request carrying both representations is rejected as ambiguous rather than resolved by precedence. Unknown fields still fail closed in both.
 
 Real requests bind to the network merchant identifier and category code when present. For documented Test simulator requests, the adapter uses `name:<merchant name>` and `category:<Highnote category>` references. The evidence records the source type. These fallbacks are not presented as Visa, Mastercard or Highnote merchant identifiers.
 

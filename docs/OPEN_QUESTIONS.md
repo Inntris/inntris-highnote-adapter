@@ -17,3 +17,18 @@ Ask these before representing the adapter as Highnote Test validated.
 13. Can Highnote provide a Test payload corpus for Visa, Mastercard, cross-border, partial approval and missing optional field cases?
 
 Until answered, the reference defaults to explicit configuration, strict schema validation and fail closed handling.
+
+## Observed Highnote Test compatibility behaviour
+
+Recorded 13 August 2026 from a real Highnote Test endpoint activation POST to the deployed adapter.
+
+- Question 1 is partly answered by observation. The activation request passed raw-body HMAC verification with `HIGHNOTE_SIGNATURE_ENCODING=hex`, so the header is lowercase hex for Highnote Test activation traffic. Confirm the same holds for authorisation traffic before treating it as settled.
+- Highnote documents two names for the same point of sale object. The simulation input uses `pointOfServiceDetails`; the callback example uses `pointOfSaleDetails` and adds a top level `networkRetrievalReferenceNumber`. The adapter now accepts both explicitly.
+- The documented callback `pointOfSaleDetails` example does not include `category` or `cardDataInputCapability`. Those are modelled as optional compatibility fields, not assumed.
+
+New questions raised by this observation:
+
+14. Are `pointOfServiceDetails` and `pointOfSaleDetails` two names for one object, or can a request legitimately carry both? The adapter currently rejects a request carrying both as ambiguous.
+15. Which representation does a real Highnote Test authorisation callback use, as opposed to an endpoint activation verification request?
+16. Are the descriptive `pointOfSaleDetails` fields always present in a callback, or omitted when not applicable? The adapter accepts them as optional and requires only `terminalSupportsPartialApproval`.
+17. Is `networkRetrievalReferenceNumber` the same value as `additionalNetworkData.retrievalReferenceNumber`, and can both appear in one request?

@@ -15,9 +15,10 @@ import {
 } from "../contracts/index.js";
 import { AdapterError } from "../errors.js";
 import { createEvidenceBundle, type InntrisEvidenceBundleV1 } from "../evidence/index.js";
-import type {
-  CollaborativeAuthorizationRequest,
-  CollaborativeAuthorizationResponse,
+import {
+  getPointOfServiceDetails,
+  type CollaborativeAuthorizationRequest,
+  type CollaborativeAuthorizationResponse,
 } from "../highnote/index.js";
 import { evaluateMandate, type MandateStore } from "../mandates/index.js";
 import { actionFromHighnote } from "./action.js";
@@ -145,7 +146,7 @@ export class HighnoteAuthorisationProcessor {
           transactionId: highnoteRequest.transaction.id,
           requestedAmount: highnoteRequest.requestedAmount,
           terminalSupportsPartialApproval:
-            highnoteRequest.pointOfServiceDetails?.terminalSupportsPartialApproval ?? false,
+            getPointOfServiceDetails(highnoteRequest)?.terminalSupportsPartialApproval ?? false,
           inntris: inntrisOutcome,
           ...(downstreamOutcome === undefined ? {} : { downstream: downstreamOutcome }),
         });

@@ -35,6 +35,10 @@ export const MerchantDetailsSchema = z
   })
   .strict();
 
+/**
+ * Point of sale semantics as they appear in the Highnote simulation input,
+ * under `pointOfServiceDetails`.
+ */
 export const PointOfServiceDetailsSchema = z
   .object({
     panEntryMode: z.string().nullable(),
@@ -46,6 +50,36 @@ export const PointOfServiceDetailsSchema = z
     terminalSupportsPartialApproval: z.boolean(),
     category: z.string().nullable(),
     cardDataInputCapability: z.string().nullable(),
+  })
+  .strict();
+
+/**
+ * The same point of sale semantics as they appear in the Highnote callback
+ * example, under `pointOfSaleDetails`.
+ *
+ * The documented callback example carries `panEntryMode`, `pinEntryMode`,
+ * `terminalAttendance`, `isCardHolderPresent`, `isCardPresent`, `isRecurring`
+ * and `terminalSupportsPartialApproval`. It does not carry `category` or
+ * `cardDataInputCapability`, so those two are modelled explicitly as optional
+ * compatibility fields rather than assumed to be present.
+ *
+ * Only `terminalSupportsPartialApproval` is a policy input, so it is required
+ * here exactly as it is in `PointOfServiceDetailsSchema`. The remaining
+ * descriptive fields are optional because Highnote documents that point of
+ * sale details are omitted when not applicable, and none of them can widen
+ * authority. Unknown keys still fail closed.
+ */
+export const PointOfSaleDetailsSchema = z
+  .object({
+    panEntryMode: z.string().nullable().optional(),
+    pinEntryMode: z.string().nullable().optional(),
+    terminalAttendance: z.string().nullable().optional(),
+    isCardHolderPresent: z.boolean().nullable().optional(),
+    isCardPresent: z.boolean().nullable().optional(),
+    isRecurring: z.boolean().nullable().optional(),
+    terminalSupportsPartialApproval: z.boolean(),
+    category: z.string().nullable().optional(),
+    cardDataInputCapability: z.string().nullable().optional(),
   })
   .strict();
 
@@ -72,33 +106,49 @@ export const AdditionalNetworkDataSchema = z.discriminatedUnion("__typename", [
     .strict(),
 ]);
 
+export const PaymentCardAuthorizationRequestSchema = z
+  .object({
+    __typename: z.literal("PaymentCardAuthorizationRequest"),
+    id: z.string().min(1).max(128),
+    transaction: z.object({ id: z.string().min(1).max(128) }).strict(),
+    transactionTimestamp: TimestampSchema,
+    paymentCard: z.object({ id: z.string().min(1).max(128) }).strict(),
+    transactionAmount: HighnoteAmountSchema,
+    settlementAmount: HighnoteAmountSchema,
+    requestedAmount: HighnoteAmountSchema,
+    surchargeFee: HighnoteAmountSchema.nullable(),
+    merchantDetails: MerchantDetailsSchema,
+    responseCode: z.enum(["APPROVED", "PARTIAL_AMOUNT_APPROVED"]).nullable(),
+    avsResponseCode: z.string().nullable(),
+    postalCodeResponseCode: z.string().nullable(),
+    cvvResponseCode: z.string().nullable(),
+    pointOfServiceDetails: PointOfServiceDetailsSchema.optional(),
+    pointOfSaleDetails: PointOfSaleDetailsSchema.optional(),
+    // Documented in the Highnote callback example. Accepted so a documented
+    // request parses, never read as an authority signal or policy input.
+    networkRetrievalReferenceNumber: z.string().max(64).nullable().optional(),
+    additionalNetworkData: AdditionalNetworkDataSchema.optional(),
+    cashBackAmount: HighnoteAmountSchema.optional(),
+    createdAt: TimestampSchema,
+  })
+  .strict()
+  // Both documented point of sale representations carry the same semantics, so
+  // a request that supplies both is ambiguous rather than redundant: the two
+  // objects could disagree on `terminalSupportsPartialApproval`. Rejecting the
+  // request keeps the adapter from silently picking one reading.
+  .refine(
+    (value) => value.pointOfServiceDetails === undefined || value.pointOfSaleDetails === undefined,
+    {
+      error:
+        "Ambiguous point of sale representation: supply pointOfServiceDetails or pointOfSaleDetails, not both",
+      path: ["pointOfSaleDetails"],
+    },
+  );
+
 export const CollaborativeAuthorizationRequestSchema = z
   .object({
     data: z
-      .object({
-        collaborativeAuthorizationRequest: z
-          .object({
-            __typename: z.literal("PaymentCardAuthorizationRequest"),
-            id: z.string().min(1).max(128),
-            transaction: z.object({ id: z.string().min(1).max(128) }).strict(),
-            transactionTimestamp: TimestampSchema,
-            paymentCard: z.object({ id: z.string().min(1).max(128) }).strict(),
-            transactionAmount: HighnoteAmountSchema,
-            settlementAmount: HighnoteAmountSchema,
-            requestedAmount: HighnoteAmountSchema,
-            surchargeFee: HighnoteAmountSchema.nullable(),
-            merchantDetails: MerchantDetailsSchema,
-            responseCode: z.enum(["APPROVED", "PARTIAL_AMOUNT_APPROVED"]).nullable(),
-            avsResponseCode: z.string().nullable(),
-            postalCodeResponseCode: z.string().nullable(),
-            cvvResponseCode: z.string().nullable(),
-            pointOfServiceDetails: PointOfServiceDetailsSchema.optional(),
-            additionalNetworkData: AdditionalNetworkDataSchema.optional(),
-            cashBackAmount: HighnoteAmountSchema.optional(),
-            createdAt: TimestampSchema,
-          })
-          .strict(),
-      })
+      .object({ collaborativeAuthorizationRequest: PaymentCardAuthorizationRequestSchema })
       .strict(),
     extensions: z.object({ signatureTimestamp: z.number().int().nonnegative().safe() }).strict(),
   })
@@ -143,6 +193,9 @@ export const CollaborativeAuthorizationResponseSchema = z
 export type CollaborativeAuthorizationRequest = z.infer<
   typeof CollaborativeAuthorizationRequestSchema
 >;
+export type PaymentCardAuthorizationRequest = z.infer<typeof PaymentCardAuthorizationRequestSchema>;
+export type PointOfServiceDetails = z.infer<typeof PointOfServiceDetailsSchema>;
+export type PointOfSaleDetails = z.infer<typeof PointOfSaleDetailsSchema>;
 export type CollaborativeAuthorizationResponse = z.infer<
   typeof CollaborativeAuthorizationResponseSchema
 >;
@@ -150,3 +203,18 @@ export type HighnoteAmount = z.infer<typeof HighnoteAmountSchema>;
 export type CollaborativeAuthorizationResponseCode = z.infer<
   typeof CollaborativeAuthorizationResponseCodeSchema
 >;
+
+/**
+ * Reads point of sale semantics from whichever documented representation the
+ * request used, without rewriting the parsed request.
+ *
+ * The parsed structure is left exactly as Highnote sent it because the adapter
+ * binds evidence to that structure and separately hashes the exact raw bytes.
+ * Schema validation already rejects a request carrying both representations,
+ * so the two branches can never disagree here.
+ */
+export function getPointOfServiceDetails(
+  request: PaymentCardAuthorizationRequest,
+): PointOfServiceDetails | PointOfSaleDetails | undefined {
+  return request.pointOfServiceDetails ?? request.pointOfSaleDetails;
+}
