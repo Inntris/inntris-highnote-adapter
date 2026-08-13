@@ -13,7 +13,7 @@ The deterministic local adapter, fixtures and offline verification are complete.
 3. Keep the documented simulator fallback policy for `HIGHNOTE_PLATFORM` and `GENERAL_SERVICES`, or replace it with the exact dummy merchant values used in the exercise.
 4. Store the Highnote endpoint signing secret and the Inntris test signing seed in the deployment secret manager.
 5. Set `PUBLIC_ADAPTER_URL` to the exact public endpoint.
-6. Keep `DOWNSTREAM_FAILURE_POLICY=deny` unless the exercise explicitly tests advisory behaviour.
+6. Keep `DOWNSTREAM_FAILURE_POLICY=deny` and `AUTHORIZATION_FAILURE_POLICY=decline` unless the exercise explicitly tests advisory or stand-in behaviour.
 7. Confirm `/health/ready` returns 200 and `/metrics` is collected only through the intended operations path.
 
 ## Configure Highnote Test
@@ -53,6 +53,19 @@ Expected adapter result:
 - signed Inntris verdict `BLOCK`
 - Highnote native checks are not reimplemented
 
+## Exercise an unmapped card
+
+Simulate an authorisation for a Test card that is deliberately absent from the mandate snapshot.
+
+Expected adapter result:
+
+- HTTP 200
+- response code `INVALID_TRANSACTION`
+- `authorization_failure_total{code="MANDATE_NOT_FOUND",policy="decline"}` incremented
+- no signed decision, because no organisational authority was established
+
+This confirms that a provisioning gap becomes a visible decline rather than a non-2xx response handed to the Highnote stand-in setting.
+
 ## Verify the resulting evidence
 
 1. Copy the emitted bundle and generated pack to a machine without Highnote credentials.
@@ -80,6 +93,7 @@ Record no secrets. Preserve:
 - [ ] HMAC encoding confirmed from an observed request or Highnote guidance
 - [ ] ALLOW simulation passed
 - [ ] BLOCK simulation passed
+- [ ] unmapped card returned a 2xx decline rather than a non-2xx stand-in delegation
 - [ ] exact retry returned the same logical result
 - [ ] deployed latency recorded
 - [ ] evidence verified offline with a pinned public key

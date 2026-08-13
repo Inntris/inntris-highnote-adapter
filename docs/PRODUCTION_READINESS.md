@@ -11,7 +11,8 @@ Production shaped Highnote Test reference adapter. Not production ready and not 
 - strict documented request and response schemas
 - organisation, principal, agent, mandate and policy binding from a pre-warmed snapshot
 - ALLOW, BLOCK and REQUIRE_APPROVAL behaviour
-- deny preserving pass-through composition
+- explicit declines rather than stand-in delegation for failures after authentication
+- deny preserving pass-through composition with availability failures separated from protocol violations
 - bounded exact retry coalescing and altered payload rejection within one process
 - signed decisions and evidence
 - deterministic allow, block, replay, approval and tamper vectors

@@ -29,6 +29,17 @@ describe("runtime configuration", () => {
     expect(config.downstreamTimeoutMs).toBe(500);
   });
 
+  it("defaults to declining after an authenticated request fails", () => {
+    expect(loadConfig(validEnvironment()).authorizationFailurePolicy).toBe("decline");
+    expect(
+      loadConfig(validEnvironment({ AUTHORIZATION_FAILURE_POLICY: "stand_in" }))
+        .authorizationFailurePolicy,
+    ).toBe("stand_in");
+    expect(() =>
+      loadConfig(validEnvironment({ AUTHORIZATION_FAILURE_POLICY: "approve" })),
+    ).toThrow();
+  });
+
   it("rejects non-HTTPS production endpoints", () => {
     expect(() =>
       loadConfig(validEnvironment({ PUBLIC_ADAPTER_URL: "http://adapter.example.test" })),

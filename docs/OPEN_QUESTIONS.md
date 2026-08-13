@@ -11,8 +11,9 @@ Ask these before representing the adapter as Highnote Test validated.
 7. Is there a documented way to distinguish a simulator request from a network originated Test request?
 8. Which decline response code does Highnote recommend when an external organisational approval is required?
 9. How should a customer configure stand-in behaviour when Inntris is an enforcement control?
-10. What endpoint availability, regional placement, TLS, IP filtering and capacity expectations apply before Live enablement?
-11. What is the recommended cutover process when a customer already has the single active Collaborative Authorization endpoint?
-12. Can Highnote provide a Test payload corpus for Visa, Mastercard, cross-border, partial approval and missing optional field cases?
+10. Which decline response code does Highnote recommend when the adapter itself fails on an authenticated request, so the failure does not have to reach the stand-in setting as a non-2xx response?
+11. What endpoint availability, regional placement, TLS, IP filtering and capacity expectations apply before Live enablement?
+12. What is the recommended cutover process when a customer already has the single active Collaborative Authorization endpoint?
+13. Can Highnote provide a Test payload corpus for Visa, Mastercard, cross-border, partial approval and missing optional field cases?
 
 Until answered, the reference defaults to explicit configuration, strict schema validation and fail closed handling.

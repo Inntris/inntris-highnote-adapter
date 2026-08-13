@@ -34,13 +34,6 @@ export function evaluateMandate(input: MandateEvaluationInput): UnsignedEvaluati
     return block("POLICY_VERSION_MISMATCH");
   }
   if (mandate.state === "REVOKED") return block("KYA_DELEGATION_REVOKED");
-  if (mandate.state === "REQUIRES_APPROVAL") {
-    return {
-      verdict: "REQUIRE_APPROVAL",
-      reasonCodes: ["HUMAN_APPROVAL_REQUIRED"],
-      approval: { mode: "human", approval_reference: null, approver_ids: [] },
-    };
-  }
   if (action.transaction.asset !== mandate.policy.currency) return block("ASSET_NOT_ALLOWED");
   if (BigInt(input.requestedAmountMinor) > BigInt(mandate.policy.max_amount_minor)) {
     return block("AMOUNT_EXCEEDS_TRANSACTION_LIMIT");
@@ -67,6 +60,17 @@ export function evaluateMandate(input: MandateEvaluationInput): UnsignedEvaluati
         : false;
   if (!categoryAllowed) {
     return block("RESOURCE_NOT_ALLOWED");
+  }
+  // Approval is only meaningful once the action would otherwise be allowed. A
+  // transaction that breaches the policy is blocked on its own reason code so
+  // the signed evidence records why, rather than implying that a human
+  // approval could have authorised it.
+  if (mandate.state === "REQUIRES_APPROVAL") {
+    return {
+      verdict: "REQUIRE_APPROVAL",
+      reasonCodes: ["HUMAN_APPROVAL_REQUIRED"],
+      approval: { mode: "human", approval_reference: null, approver_ids: [] },
+    };
   }
   return {
     verdict: "ALLOW",

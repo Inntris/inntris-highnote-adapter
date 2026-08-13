@@ -59,6 +59,36 @@ describe("downstream collaborative authorization client", () => {
   });
 
   it.each([
+    ["unparseable body", "not json at all"],
+    ["schema violation", '{"transaction":{"id":"tx_1"},"responseCode":"NOT_A_CODE"}'],
+    ["transaction mismatch", '{"transaction":{"id":"tx_other"},"responseCode":"APPROVED"}'],
+    [
+      "partial approval without an amount",
+      '{"transaction":{"id":"tx_1"},"responseCode":"PARTIAL_AMOUNT_APPROVED"}',
+    ],
+  ])(
+    "denies on a downstream %s even under the advisory failure policy",
+    async (_label, downstreamBody) => {
+      const url = await listen((_request, response) => {
+        response.writeHead(200, { "content-type": "application/json" });
+        response.end(downstreamBody);
+      });
+      const record = vi.fn();
+      // `allow_inntris` is the weakest configuration. A malformed answer must
+      // still deny, otherwise a broken endpoint silently becomes an approval.
+      const client = new HttpDownstreamAuthorisationClient(url, 500, "allow_inntris", { record });
+      await expect(
+        client.authorise({
+          rawBody: Buffer.from("{}", "utf8"),
+          highnoteSignature: "fixture-signature",
+          transactionId: "tx_1",
+        }),
+      ).resolves.toEqual({ allowed: false, responseCode: "INVALID_TRANSACTION" });
+      expect(record.mock.calls[0]?.[0]).toBe("protocol_violation");
+    },
+  );
+
+  it.each([
     ["deny", { allowed: false, responseCode: "INVALID_TRANSACTION" }],
     ["allow_inntris", undefined],
   ] as const)("applies the %s timeout policy", async (failurePolicy, expected) => {

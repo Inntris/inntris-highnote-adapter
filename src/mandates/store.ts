@@ -5,6 +5,7 @@ import { MandateSnapshotSchema, type MandateRecord, type MandateSnapshot } from 
 
 export interface MandateStore {
   findByPaymentCardId(paymentCardId: string): MandateRecord | undefined;
+  readonly size: number;
 }
 
 export class SnapshotMandateStore implements MandateStore {
@@ -19,6 +20,10 @@ export class SnapshotMandateStore implements MandateStore {
 
   findByPaymentCardId(paymentCardId: string): MandateRecord | undefined {
     return this.#byPaymentCardId.get(paymentCardId);
+  }
+
+  get size(): number {
+    return this.#byPaymentCardId.size;
   }
 }
 

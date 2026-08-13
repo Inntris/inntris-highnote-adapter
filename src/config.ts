@@ -4,6 +4,7 @@ import { z } from "zod";
 
 import type { SignatureEncoding } from "./highnote/index.js";
 import type { DownstreamFailurePolicy } from "./adapter/downstream.js";
+import type { AuthorizationFailurePolicy } from "./errors.js";
 
 function required(env: NodeJS.ProcessEnv, name: string): string {
   const value = env[name];
@@ -39,6 +40,7 @@ export interface AppConfig {
   downstreamUrl?: URL;
   downstreamTimeoutMs: number;
   downstreamFailurePolicy: DownstreamFailurePolicy;
+  authorizationFailurePolicy: AuthorizationFailurePolicy;
 }
 
 export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
@@ -51,6 +53,9 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
   const downstreamFailurePolicy = z
     .enum(["deny", "allow_inntris"])
     .parse(env["DOWNSTREAM_FAILURE_POLICY"] ?? "deny");
+  const authorizationFailurePolicy = z
+    .enum(["decline", "stand_in"])
+    .parse(env["AUTHORIZATION_FAILURE_POLICY"] ?? "decline");
   const downstreamValue = env["DOWNSTREAM_AUTHORIZATION_URL"]?.trim();
   const downstreamUrl =
     downstreamValue === undefined || downstreamValue === "" ? undefined : new URL(downstreamValue);
@@ -87,5 +92,6 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
     ...(downstreamUrl === undefined ? {} : { downstreamUrl }),
     downstreamTimeoutMs: positiveInteger(env["DOWNSTREAM_TIMEOUT_MS"], 650),
     downstreamFailurePolicy,
+    authorizationFailurePolicy,
   };
 }

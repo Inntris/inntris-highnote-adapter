@@ -10,6 +10,7 @@ export class AdapterMetrics {
   readonly downstreamProxyTotal: Counter<"result">;
   readonly downstreamLatencyMs: Histogram<"result">;
   readonly evidenceEmitTotal: Counter<"result">;
+  readonly authorizationFailureTotal: Counter<"code" | "policy">;
 
   constructor(includeDefaultMetrics = true) {
     if (includeDefaultMetrics) collectDefaultMetrics({ register: this.registry });
@@ -59,6 +60,12 @@ export class AdapterMetrics {
       name: "evidence_emit_total",
       help: "Asynchronous evidence emission outcomes",
       labelNames: ["result"],
+      registers: [this.registry],
+    });
+    this.authorizationFailureTotal = new Counter({
+      name: "authorization_failure_total",
+      help: "Adapter failures raised after a Highnote request was authenticated",
+      labelNames: ["code", "policy"],
       registers: [this.registry],
     });
   }

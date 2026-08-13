@@ -8,6 +8,10 @@ const inputPath = path.resolve(process.argv[2] ?? "fixtures/allow/evidence-bundl
 const bundle = InntrisEvidenceBundleV1Schema.parse(
   JSON.parse(await readFile(inputPath, "utf8")) as unknown,
 );
+// Archived evidence is verified as of the moment the decision was issued. A
+// decision carries a short authorisation TTL, so checking it against the
+// current wall clock would fail every bundle older than that TTL. This proves
+// the decision was valid when issued, not that it is still usable now.
 const at = new Date(Date.parse(bundle.decision.issued_at) + 1);
 const decision = verifyDecision({
   action: bundle.action,

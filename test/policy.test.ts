@@ -83,6 +83,41 @@ describe("Highnote card action and mandate policy", () => {
     expect(result.response.responseCode).toBe("INVALID_TRANSACTION");
   });
 
+  it("blocks on the breached rule rather than reporting that approval was required", async () => {
+    const request = highnoteRequest({
+      paymentCardId: "card_approval_001",
+      requestId: "te_approval_over_limit",
+      amount: 25_000,
+    });
+    const { rawBody, signature } = signedBody(request);
+    const result = await (
+      await testProcessor()
+    ).process({ request, rawBody, highnoteSignature: signature });
+    expect(result.decision.verdict).toBe("BLOCK");
+    expect(result.decision.reason_codes).toContain("AMOUNT_EXCEEDS_TRANSACTION_LIMIT");
+    expect(result.response.responseCode).toBe("EXCEEDS_LIMIT");
+  });
+
+  it("rejects a currency the runtime cannot price", async () => {
+    const request = highnoteRequest({ currency: "XYZ", requestId: "te_bad_currency" });
+    const { rawBody, signature } = signedBody(request);
+    await expect(
+      (await testProcessor()).process({ request, rawBody, highnoteSignature: signature }),
+    ).rejects.toMatchObject({ code: "UNSUPPORTED_CURRENCY" });
+  });
+
+  it("reports an over-long merchant reference explicitly", async () => {
+    const request = highnoteRequest({
+      requestId: "te_long_merchant",
+      merchantId: null,
+      merchantName: "M".repeat(200),
+    });
+    const { rawBody, signature } = signedBody(request);
+    await expect(
+      (await testProcessor()).process({ request, rawBody, highnoteSignature: signature }),
+    ).rejects.toMatchObject({ code: "MERCHANT_REFERENCE_TOO_LONG" });
+  });
+
   it("accepts the documented Highnote Test simulator identity shape", async () => {
     const request = highnoteRequest({
       paymentCardId: "card_simulator_001",

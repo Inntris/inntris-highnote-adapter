@@ -1,8 +1,10 @@
 import { afterEach, describe, expect, it } from "vitest";
 
 import { buildApp } from "../src/app.js";
-import type { HighnoteAuthorisationProcessor } from "../src/adapter/index.js";
+import { HighnoteAuthorisationProcessor } from "../src/adapter/index.js";
+import type { AuthorizationFailurePolicy } from "../src/errors.js";
 import { CollectingEvidenceSink } from "../src/evidence/index.js";
+import { SnapshotMandateStore } from "../src/mandates/index.js";
 import { AdapterMetrics } from "../src/metrics.js";
 import {
   clock,
@@ -10,13 +12,18 @@ import {
   HIGHNOTE_SECRET,
   highnoteRequest,
   signedBody,
+  signer,
   testProcessor,
 } from "./helpers.js";
 
 const apps: Array<ReturnType<typeof buildApp>> = [];
 
-async function app(processor?: HighnoteAuthorisationProcessor) {
+async function app(
+  processor?: HighnoteAuthorisationProcessor,
+  authorizationFailurePolicy?: AuthorizationFailurePolicy,
+) {
   const sink = new CollectingEvidenceSink();
+  const metrics = new AdapterMetrics(false);
   const instance = buildApp({
     processor: processor ?? (await testProcessor()),
     evidenceSink: sink,
@@ -25,11 +32,21 @@ async function app(processor?: HighnoteAuthorisationProcessor) {
     signatureEncoding: "hex",
     maxSignatureAgeMs: 300_000,
     maxFutureSkewMs: 30_000,
-    metrics: new AdapterMetrics(false),
+    ...(authorizationFailurePolicy === undefined ? {} : { authorizationFailurePolicy }),
+    metrics,
     logger: false,
   });
   apps.push(instance);
-  return { instance, sink };
+  return { instance, sink, metrics };
+}
+
+function post(instance: ReturnType<typeof buildApp>, rawBody: Buffer, signature: string) {
+  return instance.inject({
+    method: "POST",
+    url: "/v1/highnote/collaborative-authorization",
+    headers: { "content-type": "application/json", "highnote-signature": signature },
+    payload: rawBody,
+  });
 }
 
 afterEach(async () => {
@@ -113,6 +130,56 @@ describe("HTTP adapter", () => {
     expect(response.json()).toMatchObject({ error: { code: "INVALID_REQUEST_SCHEMA" } });
   });
 
+  it("declines rather than deferring to Highnote stand-in when no mandate matches", async () => {
+    const { instance, metrics } = await app();
+    const request = highnoteRequest({ paymentCardId: "card_unmapped_999", requestId: "te_no_map" });
+    const { rawBody, signature } = signedBody(request);
+    const response = await post(instance, rawBody, signature);
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toEqual({
+      transaction: { id: "tx_allow_001" },
+      responseCode: "INVALID_TRANSACTION",
+    });
+    const scraped = await metrics.registry.metrics();
+    expect(scraped).toContain(
+      'authorization_failure_total{code="MANDATE_NOT_FOUND",policy="decline"} 1',
+    );
+  });
+
+  it("defers to Highnote stand-in only when the operator opts in", async () => {
+    const { instance } = await app(undefined, "stand_in");
+    const request = highnoteRequest({ paymentCardId: "card_unmapped_999", requestId: "te_no_map" });
+    const { rawBody, signature } = signedBody(request);
+    const response = await post(instance, rawBody, signature);
+    expect(response.statusCode).toBe(422);
+    expect(response.json()).toMatchObject({ error: { code: "MANDATE_NOT_FOUND" } });
+  });
+
+  it("counts each request once on the verification and request counters", async () => {
+    const { instance, metrics } = await app();
+    const request = highnoteRequest({ paymentCardId: "card_unmapped_999", requestId: "te_once" });
+    const { rawBody, signature } = signedBody(request);
+    await post(instance, rawBody, signature);
+    const scraped = await metrics.registry.metrics();
+    const verification = scraped
+      .split("\n")
+      .filter((line) => line.startsWith("highnote_request_verification_total{"));
+    // An authenticated request that later fails must not also be counted as a
+    // verification failure on the same counter.
+    expect(verification).toEqual(['highnote_request_verification_total{result="valid"} 1']);
+    expect(scraped).toContain('requests_total{result="INVALID_TRANSACTION"} 1');
+  });
+
+  it("counts an unauthenticated request as rejected and never as valid", async () => {
+    const { instance, metrics } = await app();
+    const { rawBody } = signedBody(highnoteRequest());
+    await post(instance, rawBody, "00".repeat(32));
+    const scraped = await metrics.registry.metrics();
+    expect(scraped).toContain('highnote_request_verification_total{result="INVALID_SIGNATURE"} 1');
+    expect(scraped).not.toContain('highnote_request_verification_total{result="valid"}');
+    expect(scraped).toContain('requests_total{result="rejected"} 1');
+  });
+
   it("exposes liveness, readiness and Prometheus metrics", async () => {
     const { instance } = await app();
     expect((await instance.inject({ method: "GET", url: "/health/live" })).statusCode).toBe(200);
@@ -120,5 +187,25 @@ describe("HTTP adapter", () => {
     const metrics = await instance.inject({ method: "GET", url: "/metrics" });
     expect(metrics.statusCode).toBe(200);
     expect(metrics.body).toContain("requests_total");
+  });
+
+  it("reports not ready when the mandate snapshot resolves no records", async () => {
+    const emptyStore = new SnapshotMandateStore({
+      version: "inntris-highnote-mandate-snapshot-v1",
+      generated_at: FIXED_NOW.toISOString(),
+      records: [],
+    });
+    const { instance } = await app(
+      new HighnoteAuthorisationProcessor({
+        mandateStore: emptyStore,
+        signer,
+        clock,
+        actionResource: "https://adapter.example.test/v1/highnote/collaborative-authorization",
+      }),
+    );
+    const ready = await instance.inject({ method: "GET", url: "/health/ready" });
+    expect(ready.statusCode).toBe(503);
+    expect(ready.json()).toEqual({ status: "not_ready" });
+    expect((await instance.inject({ method: "GET", url: "/health/live" })).statusCode).toBe(200);
   });
 });

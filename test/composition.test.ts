@@ -68,6 +68,20 @@ describe("deny preserving pass through composition", () => {
     expect(response.responseCode).toBe("INVALID_TRANSACTION");
   });
 
+  it("rejects a downstream partial approval that supplies no ceiling", () => {
+    try {
+      outcomeFromResponse(
+        { transaction: { id: "tx_1" }, responseCode: "PARTIAL_AMOUNT_APPROVED" },
+        "tx_1",
+      );
+    } catch (error: unknown) {
+      expect(error).toBeInstanceOf(AdapterError);
+      expect(error).toMatchObject({ code: "DOWNSTREAM_PARTIAL_WITHOUT_AMOUNT" });
+      return;
+    }
+    throw new Error("Expected a partial approval without an amount to be rejected");
+  });
+
   it("rejects a malformed or mismatched downstream response", () => {
     expect(() => outcomeFromResponse({ responseCode: "APPROVED" }, "tx_1")).toThrow();
     try {

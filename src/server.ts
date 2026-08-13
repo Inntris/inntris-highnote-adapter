@@ -53,6 +53,7 @@ export async function startServer(): Promise<void> {
     signatureEncoding: config.signatureEncoding,
     maxSignatureAgeMs: config.maxSignatureAgeMs,
     maxFutureSkewMs: config.maxFutureSkewMs,
+    authorizationFailurePolicy: config.authorizationFailurePolicy,
     metrics,
     logger: { level: config.logLevel },
   });

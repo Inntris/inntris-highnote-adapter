@@ -8,7 +8,18 @@ import {
 import type { CollaborativeAuthorizationRequest } from "../highnote/index.js";
 import type { MandateRecord } from "../mandates/index.js";
 
+// `Intl.NumberFormat` silently falls back to two fraction digits for a
+// well-formed but unknown currency code, so the code is checked against the
+// runtime currency list before its exponent is trusted.
+const supportedCurrencies = new Set(Intl.supportedValuesOf("currency"));
+
+// Matches `IdentifierSchema` in the shared upstream contract.
+const MAX_MERCHANT_REFERENCE_LENGTH = 128;
+
 function currencyFractionDigits(currency: string): number {
+  if (!supportedCurrencies.has(currency)) {
+    throw new AdapterError("UNSUPPORTED_CURRENCY", `Unsupported currency ${currency}`, 422);
+  }
   try {
     const digits = new Intl.NumberFormat("en", { style: "currency", currency }).resolvedOptions()
       .maximumFractionDigits;
@@ -60,6 +71,16 @@ export function actionFromHighnote(input: {
     throw new AdapterError(
       "MISSING_MANDATE_IDENTITY",
       "The Highnote request lacks a merchant identifier or category code required by policy",
+      422,
+    );
+  }
+  // `protocol_reference.merchant_id` is bound by the shared upstream identifier
+  // limit. Report the overflow explicitly instead of surfacing it as a generic
+  // request schema failure.
+  if (payee.length > MAX_MERCHANT_REFERENCE_LENGTH) {
+    throw new AdapterError(
+      "MERCHANT_REFERENCE_TOO_LONG",
+      `The Highnote merchant reference exceeds ${MAX_MERCHANT_REFERENCE_LENGTH} characters`,
       422,
     );
   }

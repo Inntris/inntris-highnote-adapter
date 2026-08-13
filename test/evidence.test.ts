@@ -3,6 +3,7 @@ import { readFile } from "node:fs/promises";
 import { unzipSync } from "fflate";
 import { describe, expect, it } from "vitest";
 
+import { KeyRegistrySchema, publicKeyFingerprint } from "../src/contracts/index.js";
 import {
   buildOfflineEvidencePack,
   verifyEvidenceBundle,
@@ -85,11 +86,18 @@ describe("portable Highnote evidence", () => {
     expect(second.bundle).toEqual(first.bundle);
   });
 
-  it("keeps the upstream verifier available for an external offline check", async () => {
-    const upstreamReadme = await readFile(
-      new URL("../fixtures/x402/upstream/key-registry.json", import.meta.url),
-      "utf8",
+  it("ships a pinned upstream key registry that parses under the shared schema", async () => {
+    const registry = KeyRegistrySchema.parse(
+      JSON.parse(
+        await readFile(
+          new URL("../fixtures/x402/upstream/key-registry.json", import.meta.url),
+          "utf8",
+        ),
+      ) as unknown,
     );
-    expect(upstreamReadme).toContain("inntris-key-registry-v1");
+    expect(registry.keys).not.toHaveLength(0);
+    for (const key of registry.keys) {
+      expect(publicKeyFingerprint(Buffer.from(key.public_key, "base64url"))).toBe(key.fingerprint);
+    }
   });
 });

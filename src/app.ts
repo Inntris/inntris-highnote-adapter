@@ -1,12 +1,13 @@
 import Fastify, { type FastifyInstance } from "fastify";
 
 import type { Clock } from "./contracts/index.js";
-import { AdapterError } from "./errors.js";
+import { AdapterError, type AuthorizationFailurePolicy } from "./errors.js";
 import type { EvidenceSink } from "./evidence/index.js";
 import {
   CollaborativeAuthorizationRequestSchema,
   verifyHighnoteAuthenticity,
   verifyHighnoteFreshness,
+  type CollaborativeAuthorizationRequest,
   type SignatureEncoding,
 } from "./highnote/index.js";
 import { AdapterMetrics } from "./metrics.js";
@@ -26,9 +27,11 @@ export function buildApp(input: {
   signatureEncoding: SignatureEncoding;
   maxSignatureAgeMs: number;
   maxFutureSkewMs: number;
+  authorizationFailurePolicy?: AuthorizationFailurePolicy;
   metrics?: AdapterMetrics;
   logger?: boolean | { level: string; redact?: string[] };
 }): FastifyInstance {
+  const authorizationFailurePolicy = input.authorizationFailurePolicy ?? "decline";
   const metrics = input.metrics ?? new AdapterMetrics(false);
   const app = Fastify({
     logger:
@@ -59,7 +62,13 @@ export function buildApp(input: {
   );
 
   app.get("/health/live", () => ({ status: "ok" }));
-  app.get("/health/ready", () => ({ status: "ready" }));
+  app.get("/health/ready", (_request, reply) => {
+    // The adapter can only decide when a Highnote signing secret is configured
+    // and the pre-warmed mandate snapshot resolved at least one record.
+    const ready = input.signingSecrets.length > 0 && input.processor.isReady();
+    reply.code(ready ? 200 : 503);
+    return { status: ready ? "ready" : "not_ready" };
+  });
   app.get("/metrics", (_request, reply) => {
     reply.header("content-type", metrics.registry.contentType);
     return metrics.registry.metrics();
@@ -73,6 +82,8 @@ export function buildApp(input: {
     }
     const signatureValue = request.headers["highnote-signature"];
     const signatureHeader = Array.isArray(signatureValue) ? signatureValue[0] : signatureValue;
+
+    let parsed: CollaborativeAuthorizationRequest;
     try {
       verifyHighnoteAuthenticity({
         rawBody,
@@ -80,7 +91,7 @@ export function buildApp(input: {
         signingSecrets: input.signingSecrets,
         signatureEncoding: input.signatureEncoding,
       });
-      const parsed = CollaborativeAuthorizationRequestSchema.parse(request.body);
+      parsed = CollaborativeAuthorizationRequestSchema.parse(request.body);
       verifyHighnoteFreshness({
         signatureTimestamp: parsed.extensions.signatureTimestamp,
         now: input.clock.now(),
@@ -88,6 +99,20 @@ export function buildApp(input: {
         maxFutureSkewMs: input.maxFutureSkewMs,
       });
       metrics.highnoteRequestVerificationTotal.inc({ result: "valid" });
+    } catch (error) {
+      // The request is not provably a fresh, well-formed Highnote request, so
+      // there is nothing to decline against. It is rejected with a non-2xx
+      // status and counted only as a verification outcome.
+      metrics.highnoteRequestVerificationTotal.inc({
+        result: error instanceof AdapterError ? error.code : "invalid",
+      });
+      metrics.requestsTotal.inc({ result: "rejected" });
+      metrics.decisionLatencyMs.observe({ result: "error" }, performance.now() - started);
+      throw error;
+    }
+
+    const highnoteRequest = parsed.data.collaborativeAuthorizationRequest;
+    try {
       const processed = await input.processor.process({
         request: parsed,
         rawBody,
@@ -114,7 +139,7 @@ export function buildApp(input: {
       metrics.decisionLatencyMs.observe({ result: processed.response.responseCode }, latencyMs);
       request.log.info(
         {
-          request_id: parsed.data.collaborativeAuthorizationRequest.id,
+          request_id: highnoteRequest.id,
           decision_id: processed.decision.decision_id,
           action_hash: processed.decision.action_hash,
           verdict: processed.decision.verdict,
@@ -129,11 +154,40 @@ export function buildApp(input: {
       reply.code(200);
       return processed.response;
     } catch (error) {
-      metrics.highnoteRequestVerificationTotal.inc({
-        result: error instanceof AdapterError ? error.code : "invalid",
-      });
-      metrics.decisionLatencyMs.observe({ result: "error" }, performance.now() - started);
-      throw error;
+      // The request was authenticated, so the outcome is an authorisation
+      // outcome rather than a rejection. Returning a non-2xx here hands the
+      // decision to the Highnote stand-in setting, so the default policy
+      // declines explicitly instead.
+      const code = error instanceof AdapterError ? error.code : "INTERNAL_ERROR";
+      metrics.authorizationFailureTotal.inc({ code, policy: authorizationFailurePolicy });
+      if (authorizationFailurePolicy === "stand_in") {
+        metrics.requestsTotal.inc({ result: "rejected" });
+        metrics.decisionLatencyMs.observe({ result: "error" }, performance.now() - started);
+        request.log.warn(
+          { request_id: highnoteRequest.id, error_code: code, freshness: "valid" },
+          "Collaborative authorization deferred to Highnote stand-in",
+        );
+        throw error;
+      }
+      const response = {
+        transaction: { id: highnoteRequest.transaction.id },
+        responseCode: "INVALID_TRANSACTION",
+      } as const;
+      const latencyMs = performance.now() - started;
+      metrics.requestsTotal.inc({ result: response.responseCode });
+      metrics.decisionLatencyMs.observe({ result: response.responseCode }, latencyMs);
+      request.log.warn(
+        {
+          request_id: highnoteRequest.id,
+          error_code: code,
+          response_code: response.responseCode,
+          latency_ms: latencyMs,
+          freshness: "valid",
+        },
+        "Collaborative authorization declined after an adapter failure",
+      );
+      reply.code(200);
+      return response;
     }
   });
 

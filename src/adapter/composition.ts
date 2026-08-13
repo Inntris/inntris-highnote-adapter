@@ -29,6 +29,16 @@ export function outcomeFromResponse(
       502,
     );
   }
+  if (
+    response.responseCode === "PARTIAL_AMOUNT_APPROVED" &&
+    response.authorizedAmount === undefined
+  ) {
+    throw new AdapterError(
+      "DOWNSTREAM_PARTIAL_WITHOUT_AMOUNT",
+      "Downstream partial approval did not supply an authorised amount ceiling",
+      502,
+    );
+  }
   return {
     allowed: approvedCodes.has(response.responseCode),
     responseCode: response.responseCode,

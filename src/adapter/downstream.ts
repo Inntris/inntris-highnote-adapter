@@ -1,7 +1,12 @@
 import { outcomeFromResponse, type AuthorisationOutcome } from "./composition.js";
 
 export type DownstreamFailurePolicy = "deny" | "allow_inntris";
-export type DownstreamResult = "allow" | "deny" | "failure_fail_open" | "failure_fail_closed";
+export type DownstreamResult =
+  | "allow"
+  | "deny"
+  | "protocol_violation"
+  | "failure_fail_open"
+  | "failure_fail_closed";
 
 export interface DownstreamObserver {
   record(result: DownstreamResult, latencyMs: number): void;
@@ -29,6 +34,7 @@ export class HttpDownstreamAuthorisationClient implements DownstreamAuthorisatio
     transactionId: string;
   }): Promise<AuthorisationOutcome | undefined> {
     const started = performance.now();
+    let body: string;
     try {
       const response = await fetch(this.url, {
         method: "POST",
@@ -42,16 +48,28 @@ export class HttpDownstreamAuthorisationClient implements DownstreamAuthorisatio
         signal: AbortSignal.timeout(this.timeoutMs),
       });
       if (!response.ok) throw new TypeError(`Downstream returned HTTP ${response.status}`);
-      const body: unknown = await response.json();
-      const outcome = outcomeFromResponse(body, input.transactionId);
-      this.observer?.record(outcome.allowed ? "allow" : "deny", performance.now() - started);
-      return outcome;
+      body = await response.text();
     } catch {
+      // The endpoint did not answer: timeout, transport error, non-2xx status
+      // or an unreadable stream. Availability failures follow the configured
+      // failure policy.
       if (this.failurePolicy === "allow_inntris") {
         this.observer?.record("failure_fail_open", performance.now() - started);
         return undefined;
       }
       this.observer?.record("failure_fail_closed", performance.now() - started);
+      return { allowed: false, responseCode: "INVALID_TRANSACTION" };
+    }
+    try {
+      const outcome = outcomeFromResponse(JSON.parse(body) as unknown, input.transactionId);
+      this.observer?.record(outcome.allowed ? "allow" : "deny", performance.now() - started);
+      return outcome;
+    } catch {
+      // The endpoint answered, but the answer is not a usable authorisation:
+      // unparseable body, schema violation, transaction mismatch or a partial
+      // approval with no amount. A malformed response must never become an
+      // allow, so this denies under every failure policy.
+      this.observer?.record("protocol_violation", performance.now() - started);
       return { allowed: false, responseCode: "INVALID_TRANSACTION" };
     }
   }

@@ -87,6 +87,11 @@ export class HighnoteAuthorisationProcessor {
     );
   }
 
+  /** True when the pre-warmed mandate snapshot can resolve at least one card. */
+  isReady(): boolean {
+    return this.options.mandateStore.size > 0;
+  }
+
   async process(input: {
     request: CollaborativeAuthorizationRequest;
     rawBody: Uint8Array;

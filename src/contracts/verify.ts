@@ -156,7 +156,7 @@ export function humanVerificationOutput(result: VerificationResult): string {
     `${result.checks.signature ? "PASS" : "FAIL"} Ed25519 signature`,
     `${result.checks.action_hash ? "PASS" : "FAIL"} action hash`,
     `${result.checks.decision_binding ? "PASS" : "FAIL"} exact action binding`,
-    `${result.checks.expiry ? "PASS" : "FAIL"} decision validity window`,
+    `${result.checks.expiry ? "PASS" : "FAIL"} decision validity window at the verification time supplied`,
     `${result.checks.policy_version ? "PASS" : "FAIL"} policy version`,
     `${result.checks.payment_requirements ? "PASS" : "FAIL"} external payment requirements when supplied`,
     "",

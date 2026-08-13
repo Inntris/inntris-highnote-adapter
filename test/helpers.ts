@@ -29,6 +29,7 @@ export function highnoteRequest(
     transactionId?: string;
     paymentCardId?: string;
     amount?: number;
+    currency?: string;
     merchantId?: string | null;
     merchantName?: string | null;
     merchantCategoryCode?: string | null;
@@ -46,9 +47,18 @@ export function highnoteRequest(
         transaction: { id: overrides.transactionId ?? "tx_allow_001" },
         transactionTimestamp: "2026-08-12T11:59:59.900Z",
         paymentCard: { id: overrides.paymentCardId ?? "card_allow_001" },
-        transactionAmount: { value: overrides.amount ?? 5000, currencyCode: "USD" },
-        settlementAmount: { value: overrides.amount ?? 5000, currencyCode: "USD" },
-        requestedAmount: { value: overrides.amount ?? 5000, currencyCode: "USD" },
+        transactionAmount: {
+          value: overrides.amount ?? 5000,
+          currencyCode: overrides.currency ?? "USD",
+        },
+        settlementAmount: {
+          value: overrides.amount ?? 5000,
+          currencyCode: overrides.currency ?? "USD",
+        },
+        requestedAmount: {
+          value: overrides.amount ?? 5000,
+          currencyCode: overrides.currency ?? "USD",
+        },
         surchargeFee: null,
         merchantDetails: {
           merchantId:

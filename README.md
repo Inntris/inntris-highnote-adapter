@@ -87,7 +87,20 @@ The evidence pack signs the JCS canonical `manifest.json` and hashes every inclu
 
 If `DOWNSTREAM_AUTHORIZATION_URL` is set, the original body and Highnote signature are forwarded to the customer endpoint. Inntris and downstream outcomes are composed with deny wins semantics. If both supply amount ceilings, the lower ceiling wins. The default downstream failure policy is deny.
 
-Setting `DOWNSTREAM_FAILURE_POLICY=allow_inntris` makes downstream failure advisory and weakens enforcement. See [docs/PASS_THROUGH.md](docs/PASS_THROUGH.md).
+Setting `DOWNSTREAM_FAILURE_POLICY=allow_inntris` makes downstream unavailability advisory and weakens enforcement. It does not make a malformed downstream answer advisory: a response the adapter cannot read as an authorisation always denies. See [docs/PASS_THROUGH.md](docs/PASS_THROUGH.md).
+
+## Failure posture
+
+Highnote applies its card product stand-in settings whenever this adapter returns a non-2xx response, so which failures produce a non-2xx status is a policy choice rather than an implementation detail.
+
+Requests that cannot be proven to be fresh, authentic and well formed are rejected with a non-2xx status. There is nothing to decline against, and returning 200 to an unauthenticated caller would be wrong.
+
+Once a request is authenticated and parsed, any later adapter failure is an authorisation outcome. `AUTHORIZATION_FAILURE_POLICY` decides how it reaches Highnote:
+
+- `decline` (default) returns a 2xx `INVALID_TRANSACTION` decline, so a missing mandate, an idempotency conflict or an internal fault cannot be turned into an approval by a stand-in setting
+- `stand_in` returns the underlying non-2xx status and hands the outcome to the Highnote card product configuration
+
+Each failure is counted on `authorization_failure_total{code,policy}` and logged with the Highnote request ID.
 
 ## Runtime configuration
 
