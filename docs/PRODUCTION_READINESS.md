@@ -21,10 +21,18 @@ Production shaped Highnote Test reference adapter. Not production ready and not 
 - health, metrics, structured safe logging, container and public CI
 - zero known npm audit vulnerabilities at the recorded release check
 
+## Hosted Highnote Test evidence
+
+- Railway deployed merged commit `1ad24cc` and reported the service active
+- public liveness and readiness checks returned HTTP 200
+- a real Highnote Test activation probe passed HMAC verification and freshness validation
+- the probe received HTTP 200 in 4.58 ms and Highnote reported the endpoint `Active`
+- live metrics recorded one valid verification and one ping result
+
 ## Unproven or intentionally deferred
 
-- a request from an actual Highnote Test endpoint
-- Highnote signature encoding and freshness guidance
+- a real Highnote Test payment card authorisation callback and response
+- whether authorisation traffic uses the same observed hex signature encoding as activation traffic, and Highnote's freshness guidance
 - Highnote Live enablement or endorsement
 - production stand-in configuration
 - persistent multi-instance idempotency and replay state
