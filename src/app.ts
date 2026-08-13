@@ -59,8 +59,8 @@ export function buildApp(input: {
       try {
         request.rawJsonBody = Buffer.from(body);
         done(null, JSON.parse(body.toString("utf8")) as unknown);
-      } catch (error) {
-        done(error as Error);
+      } catch {
+        done(new AdapterError("INVALID_JSON", "Request body is not valid JSON", 400));
       }
     },
   );
@@ -228,6 +228,13 @@ export function buildApp(input: {
       void reply
         .code(error.statusCode)
         .send({ error: { code: error.code, message: error.message } });
+      return;
+    }
+    if ((error as { code?: unknown }).code === "FST_ERR_CTP_BODY_TOO_LARGE") {
+      request.log.warn({ error_code: "PAYLOAD_TOO_LARGE" }, "Request body exceeds the size limit");
+      void reply.code(413).send({
+        error: { code: "PAYLOAD_TOO_LARGE", message: "Request body exceeds the size limit" },
+      });
       return;
     }
     if ((error as { name?: string }).name === "ZodError") {

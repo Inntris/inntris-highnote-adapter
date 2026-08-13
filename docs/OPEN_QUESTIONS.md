@@ -35,7 +35,7 @@ New questions raised by this observation:
 
 The most urgent question, raised by the second activation attempt on 13 August 2026:
 
-18. **What exact JSON body does Highnote send when activating and verifying a Collaborative Authorization endpoint?** Answered by observation on 13 August 2026: `data.collaborativeAuthorizationRequest` carries a single `ping` key, with a normal `extensions.signatureTimestamp`, HMAC signed like an authorisation request. This is not described on the simulation page. Confirm it is stable and documented rather than incidental.
+18. **What exact JSON body does Highnote send when activating and verifying a Collaborative Authorization endpoint?** Partially answered by observation on 13 August 2026: `data.collaborativeAuthorizationRequest` carries `ping` as its first reported key, with a normal `extensions.signatureTimestamp`, HMAC signed like an authorisation request. The diagnostics do not prove that `ping` is the only nested key because Railway exposed only the first member of Zod's unrecognised-key array. This is not described on the simulation page. Confirm the complete stable shape with Highnote.
 
 19. **What value type does `ping` carry, and what response body does Highnote expect for a probe?** The adapter accepts any JSON value for `ping` and answers HTTP 200 with `{"ping":"ok"}`, on the basis that the documented requirement is only that the endpoint can return 2XX. Neither the request value type nor the expected response body is documented.
 

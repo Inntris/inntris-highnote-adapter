@@ -61,18 +61,23 @@ What the first diagnostic run could not distinguish: whether `collaborativeAutho
 
 Do not widen the schema to make this parse. The schema is not known to be wrong here; the payload is not known to be an authorisation request. Confirm the activation verification payload shape with Highnote before changing validation.
 
-## Third activation attempt, 13 August 2026 19:02 GMT+2: the probe shape is known
+## Third activation attempt, 13 August 2026 19:02 GMT+2: the minimum probe shape is known
 
 With `unrecognized_keys` promoted ahead of truncation, a third activation POST reported:
 
 - `schema_issue_count: 16`
 - `schema_issues[0].path: data.collaborativeAuthorizationRequest`, `code: unrecognized_keys`, `keys[0]: ping`
 
-That is the empty-object baseline of 15 issues plus exactly one unrecognised key. So the activation verification body is:
+The issue count does not establish that `ping` is the only key. Zod emits one `unrecognized_keys` issue for the whole object regardless of how many unknown keys it contains, and Railway's structured renderer exposed only `keys[0]`. The evidence therefore establishes this minimum activation verification body:
 
 ```json
 {
-  "data": { "collaborativeAuthorizationRequest": { "ping": "<undocumented value>" } },
+  "data": {
+    "collaborativeAuthorizationRequest": {
+      "ping": "<undocumented value>",
+      "<possible additional probe metadata>": "<undocumented value>"
+    }
+  },
   "extensions": { "signatureTimestamp": 1786640521401 }
 }
 ```
@@ -87,12 +92,12 @@ Highnote verifies a registered endpoint with a signed ping probe, not with an au
 
 - The probe is answered only after the same `verifyHighnoteAuthenticity` check an authorisation request must pass. An unsigned or wrongly signed probe is rejected 401.
 - The same freshness window applies. A stale probe is rejected 401.
-- The probe schema is strict and requires exactly one key, `ping`. Any additional key is rejected 400.
-- A truncated, empty or otherwise malformed authorisation request cannot match the probe shape, so it still fails 400 rather than falling through to a 2xx.
+- The outer message remains strict and the nested object must contain `ping`. Opaque probe metadata is accepted because the live diagnostics could not rule it out and none of it is used as a policy input.
+- Every transaction-bearing authorisation marker and the `PaymentCardAuthorizationRequest` typename are rejected on the probe path. A malformed authorisation carrying `ping` therefore still fails 400 rather than falling through to a 2xx.
 - No mandate is resolved, no decision is signed and no evidence is emitted, because a probe asks no organisational authority question.
 - The `ping` value is undocumented, is accepted as an unknown JSON value and is never read as a policy input. Its type is logged as a type name only.
 
-Verified against the built runtime container: signed probe 200 `{"ping":"ok"}`; unsigned probe 401 `INVALID_SIGNATURE`; stale probe 401 `STALE_REQUEST`; probe with an extra key 400; empty authorisation request 400.
+Verified locally through the HTTP route: signed probe with opaque metadata 200 `{"ping":"ok"}`; unsigned probe 401 `INVALID_SIGNATURE`; stale probe 401 `STALE_REQUEST`; probe carrying authorisation markers 400; empty authorisation request 400; malformed JSON 400; body over 256 KiB 413.
 
 ### Still unverified
 

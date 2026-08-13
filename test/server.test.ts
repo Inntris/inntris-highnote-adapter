@@ -122,8 +122,8 @@ describe("HTTP adapter", () => {
   });
 
   it("acknowledges a signed Highnote endpoint verification ping", async () => {
-    // The shape Highnote actually sent when activating the registered endpoint
-    // on 13 August 2026: a signed probe carrying only `ping`.
+    // The minimum shape evidenced when Highnote activated the registered
+    // endpoint on 13 August 2026: a signed probe carrying `ping`.
     const { instance, sink, metrics } = await app();
     const { rawBody, signature } = signedPayload({
       data: { collaborativeAuthorizationRequest: { ping: true } },
@@ -137,6 +137,28 @@ describe("HTTP adapter", () => {
     expect(scraped).toContain('requests_total{result="ping"} 1');
     // A probe asks no authority question, so nothing is decided or bound.
     expect(scraped).not.toContain("policy_decision_total{");
+    expect(sink.bundles).toHaveLength(0);
+  });
+
+  it("acknowledges a signed Highnote verification ping carrying opaque metadata", async () => {
+    // Railway exposed only keys[0] from Highnote's unrecognised-key list. The
+    // real activation request can therefore contain authenticated probe
+    // metadata after `ping` that the structured log renderer did not show.
+    const { instance, sink } = await app();
+    const { rawBody, signature } = signedPayload({
+      data: {
+        collaborativeAuthorizationRequest: {
+          ping: true,
+          __typename: "CollaborativeAuthorizationEndpointProbe",
+          id: "probe_001",
+          nonce: "activation-probe",
+        },
+      },
+      extensions: { signatureTimestamp: FIXED_NOW.getTime() },
+    });
+    const response = await post(instance, rawBody, signature);
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toEqual({ ping: "ok" });
     expect(sink.bundles).toHaveLength(0);
   });
 
@@ -170,6 +192,36 @@ describe("HTTP adapter", () => {
     const response = await post(instance, rawBody, signature);
     expect(response.statusCode).toBe(400);
     expect(response.json()).toMatchObject({ error: { code: "INVALID_REQUEST_SCHEMA" } });
+  });
+
+  it("does not let a malformed authorisation carrying ping fall through to a probe 2XX", async () => {
+    const { instance } = await app();
+    const payload = highnotePayload({ requestId: "te_truncated_ping_001" });
+    payload.data.collaborativeAuthorizationRequest["ping"] = true;
+    delete payload.data.collaborativeAuthorizationRequest["merchantDetails"];
+    const { rawBody, signature } = signedPayload(payload);
+    const response = await post(instance, rawBody, signature);
+    expect(response.statusCode).toBe(400);
+    expect(response.json()).toMatchObject({ error: { code: "INVALID_REQUEST_SCHEMA" } });
+  });
+
+  it("returns a client error for malformed JSON", async () => {
+    const { instance } = await app();
+    const response = await post(instance, Buffer.from("{not json", "utf8"), "00".repeat(32));
+    expect(response.statusCode).toBe(400);
+    expect(response.json()).toEqual({
+      error: { code: "INVALID_JSON", message: "Request body is not valid JSON" },
+    });
+  });
+
+  it("preserves the payload-too-large status from Fastify", async () => {
+    const { instance } = await app();
+    const oversized = Buffer.from(JSON.stringify({ pad: "x".repeat(300 * 1024) }), "utf8");
+    const response = await post(instance, oversized, "00".repeat(32));
+    expect(response.statusCode).toBe(413);
+    expect(response.json()).toEqual({
+      error: { code: "PAYLOAD_TOO_LARGE", message: "Request body exceeds the size limit" },
+    });
   });
 
   it("rejects an invalid signature", async () => {
