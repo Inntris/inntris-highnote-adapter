@@ -121,6 +121,57 @@ describe("HTTP adapter", () => {
     });
   });
 
+  it("acknowledges a signed Highnote endpoint verification ping", async () => {
+    // The shape Highnote actually sent when activating the registered endpoint
+    // on 13 August 2026: a signed probe carrying only `ping`.
+    const { instance, sink, metrics } = await app();
+    const { rawBody, signature } = signedPayload({
+      data: { collaborativeAuthorizationRequest: { ping: true } },
+      extensions: { signatureTimestamp: FIXED_NOW.getTime() },
+    });
+    const response = await post(instance, rawBody, signature);
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toEqual({ ping: "ok" });
+    const scraped = await metrics.registry.metrics();
+    expect(scraped).toContain('highnote_request_verification_total{result="valid"} 1');
+    expect(scraped).toContain('requests_total{result="ping"} 1');
+    // A probe asks no authority question, so nothing is decided or bound.
+    expect(scraped).not.toContain("policy_decision_total{");
+    expect(sink.bundles).toHaveLength(0);
+  });
+
+  it("rejects an unsigned verification ping", async () => {
+    const { instance } = await app();
+    const { rawBody } = signedPayload({
+      data: { collaborativeAuthorizationRequest: { ping: true } },
+      extensions: { signatureTimestamp: FIXED_NOW.getTime() },
+    });
+    const response = await post(instance, rawBody, "00".repeat(32));
+    expect(response.statusCode).toBe(401);
+    expect(response.json()).toMatchObject({ error: { code: "INVALID_SIGNATURE" } });
+  });
+
+  it("rejects a stale verification ping", async () => {
+    const { instance } = await app();
+    const { rawBody, signature } = signedPayload({
+      data: { collaborativeAuthorizationRequest: { ping: true } },
+      extensions: { signatureTimestamp: FIXED_NOW.getTime() - 300_001 },
+    });
+    const response = await post(instance, rawBody, signature);
+    expect(response.statusCode).toBe(401);
+    expect(response.json()).toMatchObject({ error: { code: "STALE_REQUEST" } });
+  });
+
+  it("does not let a malformed authorisation request fall through to a ping 2XX", async () => {
+    const { instance } = await app();
+    const payload = highnotePayload({ requestId: "te_truncated_001" });
+    delete payload.data.collaborativeAuthorizationRequest["merchantDetails"];
+    const { rawBody, signature } = signedPayload(payload);
+    const response = await post(instance, rawBody, signature);
+    expect(response.statusCode).toBe(400);
+    expect(response.json()).toMatchObject({ error: { code: "INVALID_REQUEST_SCHEMA" } });
+  });
+
   it("rejects an invalid signature", async () => {
     const { instance } = await app();
     const request = highnoteRequest();

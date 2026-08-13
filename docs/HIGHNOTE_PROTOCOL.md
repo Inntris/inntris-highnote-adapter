@@ -32,9 +32,14 @@ Real requests bind to the network merchant identifier and category code when pre
 
 The default freshness policy accepts a request up to 300 seconds old and up to 30 seconds in the future. Those values are an Inntris defensive policy, not a documented Highnote requirement.
 
+Endpoint activation is verified with a signed ping probe rather than an authorisation request, observed 13 August 2026. The adapter models it as a separate strict message type on the same authenticated boundary: same signature verification, same freshness window, strict single-key schema, no mandate resolution, no signed decision and no evidence. It is not an activation bypass.
+
 ## Public documentation gaps
 
 The public page does not specify:
+
+- that endpoint activation verification POSTs a `{"ping": ...}` probe rather than a `PaymentCardAuthorizationRequest`
+- what response body, if any, that probe expects beyond a 2XX status
 
 - whether the HMAC header is hex, Base64 or Base64url encoded
 - a mandatory freshness window

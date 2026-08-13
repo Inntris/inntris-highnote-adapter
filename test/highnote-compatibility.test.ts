@@ -6,6 +6,7 @@ import {
   countSchemaIssues,
   getPointOfServiceDetails,
   highnoteRequestIdFrom,
+  HighnoteEndpointPingSchema,
   summariseSchemaIssues,
 } from "../src/highnote/index.js";
 import { highnotePayload, highnoteRequest, signedBody, testProcessor } from "./helpers.js";
@@ -211,6 +212,78 @@ describe("point of sale representation policy semantics", () => {
     const processor = await testProcessor({ downstreamClient: partialDownstream });
     const result = await processor.process({ request, rawBody, highnoteSignature: signature });
     expect(result.response.responseCode).toBe("INVALID_TRANSACTION");
+  });
+});
+
+describe("Highnote endpoint verification ping schema", () => {
+  const ping = (value: unknown, timestamp = 1_786_640_521_401) => ({
+    data: { collaborativeAuthorizationRequest: { ping: value } },
+    extensions: { signatureTimestamp: timestamp },
+  });
+
+  it.each([
+    ["boolean", true],
+    ["string", "ping"],
+    ["number", 1],
+    ["null", null],
+    ["object", { nonce: "abc" }],
+  ])("accepts an undocumented %s ping value", (_label, value) => {
+    expect(HighnoteEndpointPingSchema.safeParse(ping(value)).success).toBe(true);
+  });
+
+  it("requires the ping key to be present", () => {
+    expect(
+      HighnoteEndpointPingSchema.safeParse({
+        data: { collaborativeAuthorizationRequest: {} },
+        extensions: { signatureTimestamp: 1_786_640_521_401 },
+      }).success,
+    ).toBe(false);
+  });
+
+  it("rejects any key beside ping", () => {
+    expect(
+      HighnoteEndpointPingSchema.safeParse({
+        data: { collaborativeAuthorizationRequest: { ping: true, nonce: "abc" } },
+        extensions: { signatureTimestamp: 1_786_640_521_401 },
+      }).success,
+    ).toBe(false);
+  });
+
+  it("requires a signature timestamp so the freshness window still applies", () => {
+    expect(
+      HighnoteEndpointPingSchema.safeParse({
+        data: { collaborativeAuthorizationRequest: { ping: true } },
+        extensions: {},
+      }).success,
+    ).toBe(false);
+  });
+
+  it("never matches an authorisation request, in either representation", () => {
+    for (const representation of ["service", "sale"] as const) {
+      expect(
+        HighnoteEndpointPingSchema.safeParse(highnotePayload({ pointOfSale: representation }))
+          .success,
+      ).toBe(false);
+    }
+  });
+
+  it("never matches a malformed or truncated authorisation request", () => {
+    // This is the property that keeps the probe path from becoming a bypass:
+    // a broken authorisation request must not fall through to a 2xx.
+    const truncated = highnotePayload();
+    delete truncated.data.collaborativeAuthorizationRequest["merchantDetails"];
+    for (const payload of [
+      truncated,
+      { data: { collaborativeAuthorizationRequest: {} }, extensions: { signatureTimestamp: 1 } },
+      { data: {}, extensions: { signatureTimestamp: 1 } },
+      {},
+    ]) {
+      expect(HighnoteEndpointPingSchema.safeParse(payload).success).toBe(false);
+    }
+  });
+
+  it("is not accepted by the authorisation schema", () => {
+    expect(parse(ping(true)).success).toBe(false);
   });
 });
 

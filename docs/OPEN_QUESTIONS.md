@@ -35,4 +35,8 @@ New questions raised by this observation:
 
 The most urgent question, raised by the second activation attempt on 13 August 2026:
 
-18. **What exact JSON body does Highnote send when activating and verifying a Collaborative Authorization endpoint?** The observed activation POST passed HMAC verification and carried `data.collaborativeAuthorizationRequest` as an object containing none of the documented `PaymentCardAuthorizationRequest` fields. If endpoint verification uses a probe payload rather than a real authorisation request, the documented contract does not describe it, and an endpoint that strictly validates authorisation requests cannot be activated without knowing its shape.
+18. **What exact JSON body does Highnote send when activating and verifying a Collaborative Authorization endpoint?** Answered by observation on 13 August 2026: `data.collaborativeAuthorizationRequest` carries a single `ping` key, with a normal `extensions.signatureTimestamp`, HMAC signed like an authorisation request. This is not described on the simulation page. Confirm it is stable and documented rather than incidental.
+
+19. **What value type does `ping` carry, and what response body does Highnote expect for a probe?** The adapter accepts any JSON value for `ping` and answers HTTP 200 with `{"ping":"ok"}`, on the basis that the documented requirement is only that the endpoint can return 2XX. Neither the request value type nor the expected response body is documented.
+
+20. Is the verification probe re-sent periodically after activation, or only during activation? An endpoint that treats it as a one-off would break on a later re-verification.

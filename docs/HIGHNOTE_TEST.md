@@ -61,6 +61,45 @@ What the first diagnostic run could not distinguish: whether `collaborativeAutho
 
 Do not widen the schema to make this parse. The schema is not known to be wrong here; the payload is not known to be an authorisation request. Confirm the activation verification payload shape with Highnote before changing validation.
 
+## Third activation attempt, 13 August 2026 19:02 GMT+2: the probe shape is known
+
+With `unrecognized_keys` promoted ahead of truncation, a third activation POST reported:
+
+- `schema_issue_count: 16`
+- `schema_issues[0].path: data.collaborativeAuthorizationRequest`, `code: unrecognized_keys`, `keys[0]: ping`
+
+That is the empty-object baseline of 15 issues plus exactly one unrecognised key. So the activation verification body is:
+
+```json
+{
+  "data": { "collaborativeAuthorizationRequest": { "ping": "<undocumented value>" } },
+  "extensions": { "signatureTimestamp": 1786640521401 }
+}
+```
+
+`extensions` produced no issue, so the probe carries a normal signature timestamp. It passed raw-body HMAC verification. It carries no payment card, amount or merchant.
+
+Highnote verifies a registered endpoint with a signed ping probe, not with an authorisation request. This is not documented on the simulation page.
+
+### How the adapter answers a probe
+
+`HighnoteEndpointPingSchema` is a second strictly validated message type on the same authenticated boundary. It is **not** an activation bypass:
+
+- The probe is answered only after the same `verifyHighnoteAuthenticity` check an authorisation request must pass. An unsigned or wrongly signed probe is rejected 401.
+- The same freshness window applies. A stale probe is rejected 401.
+- The probe schema is strict and requires exactly one key, `ping`. Any additional key is rejected 400.
+- A truncated, empty or otherwise malformed authorisation request cannot match the probe shape, so it still fails 400 rather than falling through to a 2xx.
+- No mandate is resolved, no decision is signed and no evidence is emitted, because a probe asks no organisational authority question.
+- The `ping` value is undocumented, is accepted as an unknown JSON value and is never read as a policy input. Its type is logged as a type name only.
+
+Verified against the built runtime container: signed probe 200 `{"ping":"ok"}`; unsigned probe 401 `INVALID_SIGNATURE`; stale probe 401 `STALE_REQUEST`; probe with an extra key 400; empty authorisation request 400.
+
+### Still unverified
+
+The response body Highnote expects for a probe is not documented. The adapter returns HTTP 200 with `{"ping":"ok"}` on the basis that the documented requirement is only that the endpoint can return 2XX. If activation still fails with a 200 recorded in the adapter logs, the response body is the next thing to confirm with Highnote.
+
+Activation is still **not** confirmed. Do not record it as passed until Highnote reports `ACTIVE`.
+
 ## Prepare the adapter
 
 1. Deploy the container to an HTTPS endpoint in the region chosen for the Test exercise.

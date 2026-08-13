@@ -7,6 +7,7 @@ import {
   CollaborativeAuthorizationRequestSchema,
   countSchemaIssues,
   highnoteRequestIdFrom,
+  HighnoteEndpointPingSchema,
   summariseSchemaIssues,
   verifyHighnoteAuthenticity,
   verifyHighnoteFreshness,
@@ -94,6 +95,33 @@ export function buildApp(input: {
         signingSecrets: input.signingSecrets,
         signatureEncoding: input.signatureEncoding,
       });
+      // Highnote verifies a registered endpoint with a signed ping probe that
+      // carries no authorisation request. It is answered only after the same
+      // signature check above and the same freshness window below, and its
+      // strict schema cannot match a malformed authorisation request. No
+      // mandate is resolved, no decision is signed and no evidence is emitted,
+      // because a probe asks no authority question.
+      const probe = HighnoteEndpointPingSchema.safeParse(request.body);
+      if (probe.success) {
+        verifyHighnoteFreshness({
+          signatureTimestamp: probe.data.extensions.signatureTimestamp,
+          now: input.clock.now(),
+          maxAgeMs: input.maxSignatureAgeMs,
+          maxFutureSkewMs: input.maxFutureSkewMs,
+        });
+        metrics.highnoteRequestVerificationTotal.inc({ result: "valid" });
+        metrics.requestsTotal.inc({ result: "ping" });
+        metrics.decisionLatencyMs.observe({ result: "ping" }, performance.now() - started);
+        request.log.info(
+          {
+            freshness: "valid",
+            ping_value_type: typeof probe.data.data.collaborativeAuthorizationRequest.ping,
+          },
+          "Highnote endpoint verification ping acknowledged",
+        );
+        reply.code(200);
+        return { ping: "ok" };
+      }
       parsed = CollaborativeAuthorizationRequestSchema.parse(request.body);
       verifyHighnoteFreshness({
         signatureTimestamp: parsed.extensions.signatureTimestamp,

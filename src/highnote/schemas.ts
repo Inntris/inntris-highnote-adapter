@@ -154,6 +154,34 @@ export const CollaborativeAuthorizationRequestSchema = z
   })
   .strict();
 
+/**
+ * Highnote's endpoint activation verification probe.
+ *
+ * Observed on 13 August 2026: an HMAC signed POST whose
+ * `data.collaborativeAuthorizationRequest` carries a single `ping` key and
+ * nothing else, alongside a normal `extensions.signatureTimestamp`. It carries
+ * no payment card, amount or merchant, so there is no organisational authority
+ * question to answer, no mandate to resolve and no evidence to bind.
+ *
+ * This is a second strictly validated message type on the same authenticated
+ * boundary, not a bypass. A probe is acknowledged only after it passes the same
+ * signature verification and the same freshness window that an authorisation
+ * request must pass.
+ *
+ * The `ping` value is undocumented and is never read as a policy input, so it
+ * is accepted as an unknown JSON value. The key must be present and no other
+ * key is allowed, so a truncated, empty or otherwise malformed authorisation
+ * request cannot match this shape and be answered with a 2xx.
+ */
+export const HighnoteEndpointPingSchema = z
+  .object({
+    data: z
+      .object({ collaborativeAuthorizationRequest: z.object({ ping: z.unknown() }).strict() })
+      .strict(),
+    extensions: z.object({ signatureTimestamp: z.number().int().nonnegative().safe() }).strict(),
+  })
+  .strict();
+
 export const CollaborativeAuthorizationResponseCodeSchema = z.enum([
   "APPROVED",
   "DECLINED",
@@ -196,6 +224,7 @@ export type CollaborativeAuthorizationRequest = z.infer<
 export type PaymentCardAuthorizationRequest = z.infer<typeof PaymentCardAuthorizationRequestSchema>;
 export type PointOfServiceDetails = z.infer<typeof PointOfServiceDetailsSchema>;
 export type PointOfSaleDetails = z.infer<typeof PointOfSaleDetailsSchema>;
+export type HighnoteEndpointPing = z.infer<typeof HighnoteEndpointPingSchema>;
 export type CollaborativeAuthorizationResponse = z.infer<
   typeof CollaborativeAuthorizationResponseSchema
 >;
