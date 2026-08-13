@@ -43,6 +43,24 @@ Authentication, freshness and the HMAC-before-schema ordering were not modified.
 
 Activation has **not** been confirmed. Do not record activation as passed until a later real activation attempt actually reports `ACTIVE`.
 
+## Second activation attempt after the compatibility patch, 13 August 2026 18:50 and 18:52 GMT+2
+
+Two further activation POSTs reached the deployed adapter after the compatibility patch. Both passed raw-body HMAC verification and both failed strict schema parsing with `INVALID_REQUEST_SCHEMA` and HTTP 400. Highnote again reported `status = ACTIVATION_FAILED` for endpoint `cae_a4872815fc474a47b88b8efd136fe6a2`.
+
+The sanitised diagnostics show a different failure from the one the compatibility patch addressed. Every field of the authorization request was reported missing:
+
+- `__typename` — `invalid_value`
+- `id`, `transactionTimestamp`, `avsResponseCode`, `postalCodeResponseCode`, `cvvResponseCode` — `invalid_type`, expected `string`
+- `transaction`, `paymentCard`, `transactionAmount`, `settlementAmount`, `requestedAmount`, `surchargeFee`, `merchantDetails` — `invalid_type`, expected `object`
+
+Two facts follow directly. Zod descended into `data.collaborativeAuthorizationRequest` and reported per-field issues, so `data` is an object and `collaborativeAuthorizationRequest` is an object. Every field inside it is absent rather than wrongly typed.
+
+This is **not** a `pointOfServiceDetails` versus `pointOfSaleDetails` mismatch. A well-formed authorisation request in either documented representation would produce at most one or two issues, not one per field. The activation verification POST does not appear to carry a `PaymentCardAuthorizationRequest` at all.
+
+What the first diagnostic run could not distinguish: whether `collaborativeAuthorizationRequest` was empty or carried entirely different keys. Zod emits `unrecognized_keys` only after every per-field issue, at index 15 of 16, and the summary was capped at 10. The reordering described below makes those key names survive truncation, so the next attempt will show what Highnote actually sends.
+
+Do not widen the schema to make this parse. The schema is not known to be wrong here; the payload is not known to be an authorisation request. Confirm the activation verification payload shape with Highnote before changing validation.
+
 ## Prepare the adapter
 
 1. Deploy the container to an HTTPS endpoint in the region chosen for the Test exercise.

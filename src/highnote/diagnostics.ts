@@ -30,26 +30,43 @@ function safeToken(value: unknown): string {
  * received value in it. Anything that cannot be recognised is discarded rather
  * than passed through.
  */
-export function summariseSchemaIssues(error: unknown): SchemaIssueSummary[] {
+function zodIssues(error: unknown): unknown[] {
   if (typeof error !== "object" || error === null) return [];
   const issues = (error as { issues?: unknown }).issues;
-  if (!Array.isArray(issues)) return [];
-  return issues.slice(0, MAX_ISSUES).map((entry: unknown) => {
-    const issue = (typeof entry === "object" && entry !== null ? entry : {}) as {
-      code?: unknown;
-      path?: unknown;
-      expected?: unknown;
-      keys?: unknown;
-    };
-    const path = Array.isArray(issue.path) ? issue.path.map(safeToken).join(".") : "";
-    const summary: SchemaIssueSummary = {
-      path: path.length === 0 ? "<root>" : path,
-      code: typeof issue.code === "string" ? safeToken(issue.code) : "unknown",
-    };
-    if (typeof issue.expected === "string") summary.expected = safeToken(issue.expected);
-    if (Array.isArray(issue.keys)) summary.keys = issue.keys.slice(0, MAX_KEYS).map(safeToken);
-    return summary;
-  });
+  return Array.isArray(issues) ? issues : [];
+}
+
+function toSummary(entry: unknown): SchemaIssueSummary {
+  const issue = (typeof entry === "object" && entry !== null ? entry : {}) as {
+    code?: unknown;
+    path?: unknown;
+    expected?: unknown;
+    keys?: unknown;
+  };
+  const path = Array.isArray(issue.path) ? issue.path.map(safeToken).join(".") : "";
+  const summary: SchemaIssueSummary = {
+    path: path.length === 0 ? "<root>" : path,
+    code: typeof issue.code === "string" ? safeToken(issue.code) : "unknown",
+  };
+  if (typeof issue.expected === "string") summary.expected = safeToken(issue.expected);
+  if (Array.isArray(issue.keys)) summary.keys = issue.keys.slice(0, MAX_KEYS).map(safeToken);
+  return summary;
+}
+
+export function summariseSchemaIssues(error: unknown): SchemaIssueSummary[] {
+  const summaries = zodIssues(error).map(toSummary);
+  // `unrecognized_keys` names what the sender actually supplied, which is the
+  // highest value shape evidence available when a payload is the wrong kind of
+  // object entirely. Zod emits it only after every per-field issue, so without
+  // this reordering it is the first thing the cap discards.
+  const unrecognised = summaries.filter((summary) => summary.code === "unrecognized_keys");
+  const rest = summaries.filter((summary) => summary.code !== "unrecognized_keys");
+  return [...unrecognised, ...rest].slice(0, MAX_ISSUES);
+}
+
+/** Total issue count, so a truncated summary is visibly truncated. */
+export function countSchemaIssues(error: unknown): number {
+  return zodIssues(error).length;
 }
 
 // A deliberately narrow probe. It reads the Highnote request identifier and

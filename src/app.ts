@@ -5,6 +5,7 @@ import { AdapterError, type AuthorizationFailurePolicy } from "./errors.js";
 import type { EvidenceSink } from "./evidence/index.js";
 import {
   CollaborativeAuthorizationRequestSchema,
+  countSchemaIssues,
   highnoteRequestIdFrom,
   summariseSchemaIssues,
   verifyHighnoteAuthenticity,
@@ -209,6 +210,7 @@ export function buildApp(input: {
       request.log.warn(
         {
           error_code: "INVALID_REQUEST_SCHEMA",
+          schema_issue_count: countSchemaIssues(error),
           schema_issues: summariseSchemaIssues(error),
           ...(requestId === undefined ? {} : { request_id: requestId }),
         },

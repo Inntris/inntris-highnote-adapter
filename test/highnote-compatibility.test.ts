@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import type { DownstreamAuthorisationClient } from "../src/adapter/index.js";
 import {
   CollaborativeAuthorizationRequestSchema,
+  countSchemaIssues,
   getPointOfServiceDetails,
   highnoteRequestIdFrom,
   summariseSchemaIssues,
@@ -247,6 +248,40 @@ describe("sanitised schema diagnostics", () => {
       expect(summary.keys?.length ?? 0).toBeLessThanOrEqual(10);
       for (const key of summary.keys ?? []) expect(key.length).toBeLessThanOrEqual(67);
     }
+  });
+
+  it("keeps unrecognised key names when a payload is the wrong kind of object", () => {
+    // A payload whose authorization request carries none of the expected fields
+    // produces one issue per missing field before Zod ever reports the
+    // unrecognised keys. The key names are the only evidence of what the sender
+    // actually supplied, so they must survive truncation.
+    const payload = {
+      data: {
+        collaborativeAuthorizationRequest: { verificationType: "PING", nonce: "abc" },
+      },
+      extensions: { signatureTimestamp: 1_786_639_839_319 },
+    };
+    const error = parse(payload).error;
+    expect(countSchemaIssues(error)).toBeGreaterThan(10);
+    const summaries = summariseSchemaIssues(error);
+    expect(summaries.length).toBe(10);
+    expect(summaries[0]).toEqual({
+      path: "data.collaborativeAuthorizationRequest",
+      code: "unrecognized_keys",
+      keys: ["verificationType", "nonce"],
+    });
+  });
+
+  it("counts every issue even when the summary is truncated", () => {
+    const payload = {
+      data: { collaborativeAuthorizationRequest: {} },
+      extensions: { signatureTimestamp: 1_786_639_839_319 },
+    };
+    const error = parse(payload).error;
+    expect(countSchemaIssues(error)).toBe(15);
+    expect(summariseSchemaIssues(error)).toHaveLength(10);
+    expect(countSchemaIssues(undefined)).toBe(0);
+    expect(countSchemaIssues(new Error("boom"))).toBe(0);
   });
 
   it("returns nothing for a value that is not a Zod error", () => {

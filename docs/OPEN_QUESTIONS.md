@@ -32,3 +32,7 @@ New questions raised by this observation:
 15. Which representation does a real Highnote Test authorisation callback use, as opposed to an endpoint activation verification request?
 16. Are the descriptive `pointOfSaleDetails` fields always present in a callback, or omitted when not applicable? The adapter accepts them as optional and requires only `terminalSupportsPartialApproval`.
 17. Is `networkRetrievalReferenceNumber` the same value as `additionalNetworkData.retrievalReferenceNumber`, and can both appear in one request?
+
+The most urgent question, raised by the second activation attempt on 13 August 2026:
+
+18. **What exact JSON body does Highnote send when activating and verifying a Collaborative Authorization endpoint?** The observed activation POST passed HMAC verification and carried `data.collaborativeAuthorizationRequest` as an object containing none of the documented `PaymentCardAuthorizationRequest` fields. If endpoint verification uses a probe payload rather than a real authorisation request, the documented contract does not describe it, and an endpoint that strictly validates authorisation requests cannot be activated without knowing its shape.
