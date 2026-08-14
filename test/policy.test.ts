@@ -119,8 +119,12 @@ describe("Highnote card action and mandate policy", () => {
   });
 
   it("accepts the documented Highnote Test simulator identity shape", async () => {
+    const simulatorMandate = (await testMandateStore()).snapshot.records.find(
+      (record) => record.mandate_id === "mandate_simulator_2026",
+    );
+    expect(simulatorMandate).toBeDefined();
     const request = highnoteRequest({
-      paymentCardId: "card_simulator_001",
+      paymentCardId: simulatorMandate!.payment_card_id,
       requestId: "te_simulator",
       transactionId: "tx_simulator",
       merchantId: null,
