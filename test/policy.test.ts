@@ -8,6 +8,7 @@ import {
   signedBody,
   testMandateStore,
   testProcessor,
+  testSimulatorMandate,
 } from "./helpers.js";
 
 describe("Highnote card action and mandate policy", () => {
@@ -34,6 +35,8 @@ describe("Highnote card action and mandate policy", () => {
     expect(result.response.responseCode).toBe("APPROVED");
     expect(result.bundle.action.rail).toBe("card");
     expect(result.bundle.action.extensions?.["provider"]).toBe("highnote");
+    expect(result.bundle.action.transaction.payee).toBe("merchant_allowed_001");
+    expect(result.bundle.action.extensions?.["merchant_identity_source"]).toBe("merchant_id");
   });
 
   it("blocks an amount above the organisational limit", async () => {
@@ -119,12 +122,9 @@ describe("Highnote card action and mandate policy", () => {
   });
 
   it("accepts the documented Highnote Test simulator identity shape", async () => {
-    const simulatorMandate = (await testMandateStore()).snapshot.records.find(
-      (record) => record.mandate_id === "mandate_simulator_2026",
-    );
-    expect(simulatorMandate).toBeDefined();
+    const simulatorMandate = await testSimulatorMandate();
     const request = highnoteRequest({
-      paymentCardId: simulatorMandate!.payment_card_id,
+      paymentCardId: simulatorMandate.payment_card_id,
       requestId: "te_simulator",
       transactionId: "tx_simulator",
       merchantId: null,
@@ -141,7 +141,57 @@ describe("Highnote card action and mandate policy", () => {
     ).process({ request, rawBody, highnoteSignature: signature });
     expect(result.decision.verdict).toBe("ALLOW");
     expect(result.bundle.action.transaction.payee).toBe("name:HIGHNOTE_PLATFORM");
+    expect(result.bundle.action.extensions?.["merchant_identity_source"]).toBe("name");
     expect(result.response.responseCode).toBe("APPROVED");
+  });
+
+  it("allows the observed USD 50 Highnote simulator transaction with MCC 1520", async () => {
+    const simulatorMandate = await testSimulatorMandate();
+    const request = highnoteRequest({
+      paymentCardId: simulatorMandate.payment_card_id,
+      requestId: "te_simulator_mcc_1520_allow",
+      transactionId: "tx_simulator_mcc_1520_allow",
+      amount: 5_000,
+      merchantId: "",
+      merchantName: "HIGHNOTE_PLATFORM",
+      merchantCategoryCode: "1520",
+      merchantCategory: "GENERAL_SERVICES",
+      preliminaryResponseCode: null,
+    });
+    const { rawBody, signature } = signedBody(request);
+    const result = await (
+      await testProcessor()
+    ).process({ request, rawBody, highnoteSignature: signature });
+    expect(request.data.collaborativeAuthorizationRequest.merchantDetails.merchantId).toBe("");
+    expect(result.decision.verdict).toBe("ALLOW");
+    expect(result.decision.reason_codes).toEqual(["MERCHANT_ALLOWED", "WITHIN_TRANSACTION_LIMIT"]);
+    expect(result.bundle.action.transaction.payee).toBe("name:HIGHNOTE_PLATFORM");
+    expect(result.bundle.action.extensions?.["merchant_identity_source"]).toBe("name");
+    expect(result.bundle.action.extensions?.["merchant_category_source"]).toBe("category_code");
+    expect(result.bundle.action.extensions?.["merchant_category_reference"]).toBe("1520");
+    expect(result.response.responseCode).toBe("APPROVED");
+  });
+
+  it("blocks the observed USD 250 Highnote simulator shape above its limit", async () => {
+    const simulatorMandate = await testSimulatorMandate();
+    const request = highnoteRequest({
+      paymentCardId: simulatorMandate.payment_card_id,
+      requestId: "te_simulator_mcc_1520_block",
+      transactionId: "tx_simulator_mcc_1520_block",
+      amount: 25_000,
+      merchantId: "",
+      merchantName: "HIGHNOTE_PLATFORM",
+      merchantCategoryCode: "1520",
+      merchantCategory: "GENERAL_SERVICES",
+      preliminaryResponseCode: null,
+    });
+    const { rawBody, signature } = signedBody(request);
+    const result = await (
+      await testProcessor()
+    ).process({ request, rawBody, highnoteSignature: signature });
+    expect(result.decision.verdict).toBe("BLOCK");
+    expect(result.decision.reason_codes).toEqual(["AMOUNT_EXCEEDS_TRANSACTION_LIMIT"]);
+    expect(result.response.responseCode).toBe("EXCEEDS_LIMIT");
   });
 
   it("fails closed when the merchant identity is absent", async () => {

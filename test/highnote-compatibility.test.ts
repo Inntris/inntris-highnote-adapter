@@ -86,6 +86,40 @@ describe("Highnote request schema compatibility", () => {
     ).toBe("020000654321");
   });
 
+  it.each([
+    ["null", null],
+    ["empty", ""],
+    ["bounded non-empty", "merchant_allowed_001"],
+  ])("parses and preserves a %s merchant ID", (_label, merchantId) => {
+    const result = parse(highnotePayload({ merchantId }));
+    expect(result.success).toBe(true);
+    expect(result.data?.data.collaborativeAuthorizationRequest.merchantDetails.merchantId).toBe(
+      merchantId,
+    );
+  });
+
+  it("rejects an overlong merchant ID", () => {
+    expect(issuePaths(highnotePayload({ merchantId: "m".repeat(129) }))).toEqual([
+      "data.collaborativeAuthorizationRequest.merchantDetails.merchantId",
+    ]);
+  });
+
+  it("still rejects an arbitrary unknown merchantDetails field", () => {
+    const payload = highnotePayload();
+    const merchantDetails = payload.data.collaborativeAuthorizationRequest[
+      "merchantDetails"
+    ] as Record<string, unknown>;
+    merchantDetails["merchantRiskOverride"] = "APPROVE";
+    const summaries = summariseSchemaIssues(parse(payload).error);
+    expect(summaries).toEqual([
+      {
+        path: "data.collaborativeAuthorizationRequest.merchantDetails",
+        code: "unrecognized_keys",
+        keys: ["merchantRiskOverride"],
+      },
+    ]);
+  });
+
   it("rejects an unbounded networkRetrievalReferenceNumber", () => {
     expect(
       issuePaths(highnotePayload({ networkRetrievalReferenceNumber: "0".repeat(65) })),

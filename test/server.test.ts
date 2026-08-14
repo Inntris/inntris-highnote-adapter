@@ -16,6 +16,7 @@ import {
   signedPayload,
   signer,
   testProcessor,
+  testSimulatorMandate,
 } from "./helpers.js";
 
 const apps: Array<ReturnType<typeof buildApp>> = [];
@@ -104,6 +105,33 @@ describe("HTTP adapter", () => {
     });
     const scraped = await metrics.registry.metrics();
     // Authenticity, schema and freshness all passed, and the processor decided.
+    expect(scraped).toContain('highnote_request_verification_total{result="valid"} 1');
+    expect(scraped).toContain('policy_decision_total{verdict="ALLOW"} 1');
+    expect(scraped).toContain('requests_total{result="APPROVED"} 1');
+  });
+
+  it("authorises the signed Highnote simulator callback with an empty merchant ID", async () => {
+    const { instance, metrics } = await app();
+    const simulatorMandate = await testSimulatorMandate();
+    const payload = highnotePayload({
+      paymentCardId: simulatorMandate.payment_card_id,
+      requestId: "te_real_simulator_empty_merchant",
+      transactionId: "tx_real_simulator_empty_merchant",
+      amount: 5_000,
+      merchantId: "",
+      merchantName: "HIGHNOTE_PLATFORM",
+      merchantCategoryCode: "1520",
+      merchantCategory: "GENERAL_SERVICES",
+      preliminaryResponseCode: null,
+    });
+    const { rawBody, signature } = signedPayload(payload);
+    const response = await post(instance, rawBody, signature);
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toEqual({
+      transaction: { id: "tx_real_simulator_empty_merchant" },
+      responseCode: "APPROVED",
+    });
+    const scraped = await metrics.registry.metrics();
     expect(scraped).toContain('highnote_request_verification_total{result="valid"} 1');
     expect(scraped).toContain('policy_decision_total{verdict="ALLOW"} 1');
     expect(scraped).toContain('requests_total{result="APPROVED"} 1');

@@ -64,7 +64,12 @@ export function actionFromHighnote(input: {
   const merchantName = request.merchantDetails.name;
   const merchantCategoryCode = request.merchantDetails.categoryCode;
   const merchantCategory = request.merchantDetails.category;
-  const payee = merchantId ?? (merchantName === null ? null : `name:${merchantName}`);
+  const payee =
+    merchantId === null || merchantId === ""
+      ? merchantName === null
+        ? null
+        : `name:${merchantName}`
+      : merchantId;
   const categoryReference =
     merchantCategoryCode ?? (merchantCategory === null ? null : `category:${merchantCategory}`);
   if (payee === null || categoryReference === null) {
@@ -117,7 +122,7 @@ export function actionFromHighnote(input: {
       policy_version: input.mandate.policy.version,
       highnote_transaction_id: request.transaction.id,
       highnote_source_payload_hash: sha256Bytes(input.rawBody),
-      merchant_identity_source: merchantId === null ? "name" : "merchant_id",
+      merchant_identity_source: merchantId === null || merchantId === "" ? "name" : "merchant_id",
       merchant_category_source:
         merchantCategoryCode === null || merchantCategoryCode === undefined
           ? "category"

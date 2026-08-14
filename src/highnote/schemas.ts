@@ -25,7 +25,7 @@ const AddressSchema = z
 
 export const MerchantDetailsSchema = z
   .object({
-    merchantId: z.string().min(1).nullable(),
+    merchantId: z.string().max(128).nullable(),
     category: z.string().min(1).nullable(),
     categoryCode: z.string().min(1).nullable().optional(),
     countryCodeAlpha3: z.string().min(1).nullable(),

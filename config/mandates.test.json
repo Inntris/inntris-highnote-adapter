@@ -36,7 +36,7 @@
         "max_amount_minor": "10000",
         "allowed_merchant_ids": [],
         "allowed_merchant_names": ["HIGHNOTE_PLATFORM"],
-        "allowed_merchant_category_codes": [],
+        "allowed_merchant_category_codes": ["1520"],
         "allowed_merchant_categories": ["GENERAL_SERVICES"]
       }
     },

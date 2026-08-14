@@ -23,6 +23,14 @@ export async function testMandateStore(): Promise<SnapshotMandateStore> {
   return new SnapshotMandateStore(MandateSnapshotSchema.parse(JSON.parse(raw)));
 }
 
+export async function testSimulatorMandate() {
+  const mandate = (await testMandateStore()).snapshot.records.find(
+    (record) => record.mandate_id === "mandate_simulator_2026",
+  );
+  if (mandate === undefined) throw new Error("Simulator mandate is missing from the test snapshot");
+  return mandate;
+}
+
 export interface HighnoteRequestOverrides {
   requestId?: string;
   transactionId?: string;
