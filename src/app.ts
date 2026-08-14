@@ -1,8 +1,9 @@
 import Fastify, { type FastifyInstance } from "fastify";
 
 import type { Clock } from "./contracts/index.js";
+import { registerInntrisDecisionRoutes } from "./decisions/index.js";
 import { AdapterError, type AuthorizationFailurePolicy } from "./errors.js";
-import type { EvidenceSink } from "./evidence/index.js";
+import type { EvidenceRepository } from "./evidence/index.js";
 import {
   CollaborativeAuthorizationRequestSchema,
   countSchemaIssues,
@@ -25,7 +26,7 @@ declare module "fastify" {
 
 export function buildApp(input: {
   processor: HighnoteAuthorisationProcessor;
-  evidenceSink: EvidenceSink;
+  evidenceSink: EvidenceRepository;
   clock: Clock;
   signingSecrets: string[];
   signatureEncoding: SignatureEncoding;
@@ -77,6 +78,7 @@ export function buildApp(input: {
     reply.header("content-type", metrics.registry.contentType);
     return metrics.registry.metrics();
   });
+  registerInntrisDecisionRoutes(app, input.evidenceSink);
 
   app.post("/v1/highnote/collaborative-authorization", async (request, reply) => {
     const started = performance.now();

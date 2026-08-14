@@ -4,7 +4,7 @@ This runbook is for Highnote Test only. Use dummy data. Do not put production or
 
 ## Current state
 
-The deterministic local adapter, fixtures and offline verification are complete. Highnote Test endpoint activation is confirmed `Active`. The remaining live Test gate is an end-to-end authorisation exercise; the configured card product had no Account Holders or payment cards when activation was verified.
+The deterministic local adapter, fixtures and offline verification are complete. Highnote Test endpoint activation is confirmed `Active`. On 14 August 2026, real Highnote Test simulations validated the USD 50 Inntris ALLOW path and the USD 250 Inntris BLOCK path. Remaining live Test gates include the unmapped card, exact retry, deployed latency and offline verification of the captured live evidence with a pinned public key.
 
 ## Observed Highnote Test endpoint activation attempt, 13 August 2026
 
@@ -41,7 +41,7 @@ The adapter now explicitly supports both documented representations while remain
 
 Authentication, freshness and the HMAC-before-schema ordering were not modified. There is no activation special case: Highnote's activation verification traverses the same authenticated request boundary as normal Collaborative Authorization traffic.
 
-Activation has **not** been confirmed. Do not record activation as passed until a later real activation attempt actually reports `ACTIVE`.
+At that point, activation had **not** been confirmed. It was not recorded as passed until the later real activation attempt reported `ACTIVE`.
 
 ## Second activation attempt after the compatibility patch, 13 August 2026 18:50 and 18:52 GMT+2
 
@@ -105,10 +105,49 @@ Highnote sent a fresh signed probe to the Railway deployment serving merged comm
 
 The Highnote dashboard reported **Inntris Highnote Adapter Test** as `Active` at the registered HTTPS endpoint. This confirms Test endpoint activation and the response body used by the adapter. It does not establish a Highnote Live deployment or a completed authorisation simulation.
 
+## View decisions from Inntris
+
+Open the server rendered Inntris decision page at:
+
+```text
+/inntris/decisions
+```
+
+Select a decision to open its evidence view at:
+
+```text
+/inntris/decisions/:decisionId
+```
+
+The read only JSON surfaces are:
+
+```text
+/v1/inntris/decisions
+/v1/inntris/decisions/:decisionId
+/v1/inntris/decisions/by-highnote-request/:requestId
+```
+
+The list supports `verdict=ALLOW`, `verdict=BLOCK`, `verdict=REQUIRE_APPROVAL`, `provider=highnote` and a bounded `limit` of at most 100. List responses contain safe summaries only. Detailed responses include the Inntris action, signed decision, execution reference and public verification material. They do not include the raw Highnote request, Highnote HMAC signature, card credentials, signing seed or endpoint secret.
+
+Detailed views recalculate evidence integrity with the existing Inntris evidence verifier. `VERIFIED` means the stored bundle signature, decision signature, action binding, Highnote reference binding, source payload hash binding and key registry all verify at the decision issuance time. It does not mean an expired decision remains usable. A stored but tampered bundle remains visible with `evidence_integrity = INVALID`.
+
+Highnote Test validated on 14 August 2026:
+
+1. USD 50.00 produced Inntris `ALLOW` and Highnote `APPROVED`.
+2. USD 250.00 produced Inntris `BLOCK` with `AMOUNT_EXCEEDS_TRANSACTION_LIMIT`, and Highnote returned `EXCEEDS_LIMIT`, displayed as Declined by Collab Auth.
+
+This validates Highnote Test only. It is not Highnote Live validation.
+
+### Evidence persistence limitation
+
+The current `FileEvidenceSink` stores evidence under `EVIDENCE_OUTPUT_DIRECTORY`. Railway containers are replaceable, so the container filesystem must not be described as durable. The Inntris decision page shows evidence available to the current deployment filesystem.
+
+Durable Railway evidence requires either a persistent volume mounted at `EVIDENCE_OUTPUT_DIRECTORY` or a future external durable implementation of the evidence repository interface. No database or cloud storage service is introduced by this reference task.
+
 ## Prepare the adapter
 
 1. Deploy the container to an HTTPS endpoint in the region chosen for the Test exercise.
-2. Mount or supply the mandate snapshot. Replace `card_simulator_001` with the actual Highnote Test payment card ID.
+2. Mount or supply the mandate snapshot and confirm it contains the intended Highnote Test payment card ID.
 3. Keep the documented simulator fallback policy for `HIGHNOTE_PLATFORM` and `GENERAL_SERVICES`, or replace it with the exact dummy merchant values used in the exercise.
 4. Store the Highnote endpoint signing secret and the Inntris test signing seed in the deployment secret manager.
 5. Set `PUBLIC_ADAPTER_URL` to the exact public endpoint.
@@ -191,8 +230,8 @@ Record no secrets. Preserve:
 - [x] Highnote Test request reached the deployed adapter (activation POST, 13 August 2026)
 - [x] HMAC encoding confirmed from an observed request: the activation POST passed hex HMAC verification
 - [x] Highnote Test endpoint status reported `Active` on 13 August 2026 after a signed fresh probe received HTTP 200
-- [ ] ALLOW simulation passed
-- [ ] BLOCK simulation passed
+- [x] ALLOW simulation passed on 14 August 2026: USD 50.00, Inntris `ALLOW`, Highnote `APPROVED`
+- [x] BLOCK simulation passed on 14 August 2026: USD 250.00, `AMOUNT_EXCEEDS_TRANSACTION_LIMIT`, Highnote `EXCEEDS_LIMIT`
 - [ ] unmapped card returned a 2xx decline rather than a non-2xx stand-in delegation
 - [ ] exact retry returned the same logical result
 - [ ] deployed latency recorded

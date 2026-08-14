@@ -36,6 +36,17 @@ describe("reference storage adapters", () => {
       await readFile(path.join(directory, `${result.bundle.bundle_id}.json`), "utf8"),
     ) as unknown;
     expect(stored).toEqual(result.bundle);
+    await expect(sink.listRecent({ provider: "highnote", limit: 10 })).resolves.toEqual([
+      result.bundle,
+    ]);
+    await expect(sink.findByDecisionId(result.decision.decision_id)).resolves.toEqual(
+      result.bundle,
+    );
+    await expect(
+      sink.findByHighnoteRequestId(
+        result.bundle.execution_reference.collaborative_authorization_request_id,
+      ),
+    ).resolves.toEqual(result.bundle);
     await expect(sink.write(result.bundle)).rejects.toMatchObject({ code: "EEXIST" });
   });
 

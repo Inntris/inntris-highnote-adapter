@@ -184,17 +184,21 @@ export function signedBody(request: CollaborativeAuthorizationRequest): {
 export async function testProcessor(
   options: {
     downstreamClient?: DownstreamAuthorisationClient;
+    clock?: Clock;
+    decisionIdFactory?: () => string;
+    nonceFactory?: () => string;
+    bundleIdFactory?: () => string;
   } = {},
 ): Promise<HighnoteAuthorisationProcessor> {
   return new HighnoteAuthorisationProcessor({
     mandateStore: await testMandateStore(),
     signer,
-    clock,
+    clock: options.clock ?? clock,
     actionResource: "https://adapter.example.test/v1/highnote/collaborative-authorization",
     idempotencyStore: new InMemoryIdempotencyStore(),
-    decisionIdFactory: () => "decision-highnote-test-001",
-    nonceFactory: () => "Zml4ZWQtaGlnaG5vdGUtbm9uY2U",
-    bundleIdFactory: () => "bundle-highnote-test-001",
+    decisionIdFactory: options.decisionIdFactory ?? (() => "decision-highnote-test-001"),
+    nonceFactory: options.nonceFactory ?? (() => "Zml4ZWQtaGlnaG5vdGUtbm9uY2U"),
+    bundleIdFactory: options.bundleIdFactory ?? (() => "bundle-highnote-test-001"),
     ...(options.downstreamClient === undefined
       ? {}
       : { downstreamClient: options.downstreamClient }),
