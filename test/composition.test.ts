@@ -1,6 +1,10 @@
 import { describe, expect, it } from "vitest";
 
-import { composeAuthorisation, outcomeFromResponse } from "../src/adapter/index.js";
+import {
+  composeAuthorisation,
+  outcomeFromResponse,
+  responseCodeForCoreViolation,
+} from "../src/adapter/index.js";
 import { AdapterError } from "../src/errors.js";
 
 const requestedAmount = { value: 5000, currencyCode: "USD" } as const;
@@ -8,6 +12,13 @@ const allow = { allowed: true, responseCode: "APPROVED" } as const;
 const block = { allowed: false, responseCode: "RESTRICTED_MERCHANT" } as const;
 
 describe("deny preserving pass through composition", () => {
+  it("maps stable Core policy violations to Highnote response codes", () => {
+    expect(responseCodeForCoreViolation("per_action_limit_exceeded")).toBe("EXCEEDS_LIMIT");
+    expect(responseCodeForCoreViolation("daily_limit_exceeded")).toBe("EXCEEDS_LIMIT");
+    expect(responseCodeForCoreViolation("rate_limit_exceeded")).toBe("EXCEEDS_FREQUENCY");
+    expect(responseCodeForCoreViolation("action_not_allowed")).toBe("INVALID_TRANSACTION");
+  });
+
   it("allows only when both decisions allow", () => {
     expect(
       composeAuthorisation({

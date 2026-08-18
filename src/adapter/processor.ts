@@ -26,15 +26,51 @@ import { composeAuthorisation, type AuthorisationOutcome } from "./composition.j
 import type { DownstreamAuthorisationClient } from "./downstream.js";
 import { InMemoryIdempotencyStore } from "./idempotency.js";
 
-interface ProcessedValue {
+interface LocalProcessedValue {
+  authorityMode: "local";
   response: CollaborativeAuthorizationResponse;
   bundle: InntrisEvidenceBundleV1;
   decision: InntrisDecisionV1;
+  verdict: InntrisDecisionV1["verdict"];
+  actionHash: string;
+  downstreamLatencyMs: number;
   downstreamOutcome: "not_configured" | "allow" | "block" | "bypassed";
 }
 
-export interface ProcessedAuthorisation extends ProcessedValue {
+export interface LocalProcessedAuthorisation extends LocalProcessedValue {
   replayed: boolean;
+}
+
+export interface CoreProcessedAuthorisation {
+  authorityMode: "inntris_core";
+  response: CollaborativeAuthorizationResponse;
+  verdict: "ALLOW" | "BLOCK";
+  actionHash: string;
+  decisionAuditId: string;
+  decisionReceiptUrl: string;
+  verifyLatencyMs: number;
+  verifyStatus: number;
+  verifyIdempotencyStatus: "new" | "replayed";
+  consumptionAuditId?: string;
+  consumptionReceiptUrl?: string;
+  consumptionStatus?: "consumed" | "idempotent";
+  consumeLatencyMs?: number;
+  consumeStatus?: number;
+  violationCode?: string;
+  downstreamOutcome: "not_configured";
+  downstreamLatencyMs: number;
+  replayed: boolean;
+}
+
+export type ProcessedAuthorisation = LocalProcessedAuthorisation | CoreProcessedAuthorisation;
+
+export interface AuthorisationProcessor {
+  isReady(): boolean;
+  process(input: {
+    request: CollaborativeAuthorizationRequest;
+    rawBody: Uint8Array;
+    highnoteSignature: string;
+  }): Promise<ProcessedAuthorisation>;
 }
 
 function outcomeFromEvaluation(
@@ -56,7 +92,7 @@ function outcomeFromEvaluation(
   return { allowed: false, responseCode };
 }
 
-export class HighnoteAuthorisationProcessor {
+export class HighnoteAuthorisationProcessor implements AuthorisationProcessor {
   readonly #keyRegistry: KeyRegistry;
   readonly #idempotencyStore: InMemoryIdempotencyStore;
 
@@ -97,7 +133,7 @@ export class HighnoteAuthorisationProcessor {
     request: CollaborativeAuthorizationRequest;
     rawBody: Uint8Array;
     highnoteSignature: string;
-  }): Promise<ProcessedAuthorisation> {
+  }): Promise<LocalProcessedAuthorisation> {
     const highnoteRequest = input.request.data.collaborativeAuthorizationRequest;
     const mandate = this.options.mandateStore.findByPaymentCardId(highnoteRequest.paymentCard.id);
     if (mandate === undefined) {
@@ -108,7 +144,7 @@ export class HighnoteAuthorisationProcessor {
       );
     }
     const payloadHash = hashCanonical(input.request);
-    const result = await this.#idempotencyStore.execute<ProcessedValue>(
+    const result = await this.#idempotencyStore.execute<LocalProcessedValue>(
       highnoteRequest.id,
       payloadHash,
       async () => {
@@ -137,11 +173,14 @@ export class HighnoteAuthorisationProcessor {
           nonce: this.options.nonceFactory?.() ?? randomBytes(24).toString("base64url"),
         });
         const inntrisOutcome = outcomeFromEvaluation(evaluation, highnoteRequest.requestedAmount);
+        const downstreamStarted = performance.now();
         const downstreamOutcome = await this.options.downstreamClient?.authorise({
           rawBody: input.rawBody,
           highnoteSignature: input.highnoteSignature,
           transactionId: highnoteRequest.transaction.id,
         });
+        const downstreamLatencyMs =
+          this.options.downstreamClient === undefined ? 0 : performance.now() - downstreamStarted;
         const response = composeAuthorisation({
           transactionId: highnoteRequest.transaction.id,
           requestedAmount: highnoteRequest.requestedAmount,
@@ -167,7 +206,16 @@ export class HighnoteAuthorisationProcessor {
               : downstreamOutcome.allowed
                 ? "allow"
                 : "block";
-        return { response, bundle, decision, downstreamOutcome: downstreamStatus };
+        return {
+          authorityMode: "local",
+          response,
+          bundle,
+          decision,
+          verdict: decision.verdict,
+          actionHash: decision.action_hash,
+          downstreamLatencyMs,
+          downstreamOutcome: downstreamStatus,
+        };
       },
     );
     return { ...result.value, replayed: result.replayed };

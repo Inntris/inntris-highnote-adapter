@@ -11,6 +11,9 @@ export class AdapterMetrics {
   readonly downstreamLatencyMs: Histogram<"result">;
   readonly evidenceEmitTotal: Counter<"result">;
   readonly authorizationFailureTotal: Counter<"code" | "policy">;
+  readonly coreVerifyLatencyMs: Histogram<"status">;
+  readonly coreConsumeLatencyMs: Histogram<"status">;
+  readonly coreAuthorityTotal: Counter<"verdict" | "consumption">;
 
   constructor(includeDefaultMetrics = true) {
     if (includeDefaultMetrics) collectDefaultMetrics({ register: this.registry });
@@ -66,6 +69,26 @@ export class AdapterMetrics {
       name: "authorization_failure_total",
       help: "Adapter failures raised after a Highnote request was authenticated",
       labelNames: ["code", "policy"],
+      registers: [this.registry],
+    });
+    this.coreVerifyLatencyMs = new Histogram({
+      name: "inntris_core_verify_latency_ms",
+      help: "Inntris Core verify request latency in milliseconds",
+      labelNames: ["status"],
+      buckets: [25, 50, 100, 250, 500, 800, 1000, 1200, 1500],
+      registers: [this.registry],
+    });
+    this.coreConsumeLatencyMs = new Histogram({
+      name: "inntris_core_consume_latency_ms",
+      help: "Inntris Core verify token consumption latency in milliseconds",
+      labelNames: ["status"],
+      buckets: [25, 50, 100, 250, 500, 800, 1000, 1200, 1500],
+      registers: [this.registry],
+    });
+    this.coreAuthorityTotal = new Counter({
+      name: "inntris_core_authority_total",
+      help: "Inntris Core authority outcomes and consumption state",
+      labelNames: ["verdict", "consumption"],
       registers: [this.registry],
     });
   }

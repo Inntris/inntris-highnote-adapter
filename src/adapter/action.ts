@@ -1,5 +1,8 @@
+import { createHash } from "node:crypto";
+
 import { AdapterError } from "../errors.js";
 import {
+  canonicalise,
   hashCanonical,
   InntrisActionV1Schema,
   sha256Bytes,
@@ -15,6 +18,20 @@ const supportedCurrencies = new Set(Intl.supportedValuesOf("currency"));
 
 // Matches `IdentifierSchema` in the shared upstream contract.
 const MAX_MERCHANT_REFERENCE_LENGTH = 128;
+
+export interface InntrisCoreFinancialPayload {
+  amount: string;
+  currency: "USD";
+  payee: string;
+  merchant_category: string;
+  provider: "highnote";
+  rail: "card";
+  request_ref: string;
+  highnote_request_id: string;
+  highnote_transaction_id: string;
+  credential_reference_hash: `sha256:${string}`;
+  source_request_hash: `sha256:${string}`;
+}
 
 function currencyFractionDigits(currency: string): number {
   if (!supportedCurrencies.has(currency)) {
@@ -53,17 +70,15 @@ function cardNetwork(request: CollaborativeAuthorizationRequest): string {
   return "unknown";
 }
 
-export function actionFromHighnote(input: {
-  request: CollaborativeAuthorizationRequest;
-  rawBody: Uint8Array;
-  mandate: MandateRecord;
-  resource: string;
-}): InntrisActionV1 {
-  const request = input.request.data.collaborativeAuthorizationRequest;
-  const merchantId = request.merchantDetails.merchantId;
-  const merchantName = request.merchantDetails.name;
-  const merchantCategoryCode = request.merchantDetails.categoryCode;
-  const merchantCategory = request.merchantDetails.category;
+function merchantReferences(request: CollaborativeAuthorizationRequest): {
+  payee: string;
+  categoryReference: string;
+} {
+  const authorisation = request.data.collaborativeAuthorizationRequest;
+  const merchantId = authorisation.merchantDetails.merchantId;
+  const merchantName = authorisation.merchantDetails.name;
+  const merchantCategoryCode = authorisation.merchantDetails.categoryCode;
+  const merchantCategory = authorisation.merchantDetails.category;
   const payee =
     merchantId === null || merchantId === ""
       ? merchantName === null
@@ -79,9 +94,6 @@ export function actionFromHighnote(input: {
       422,
     );
   }
-  // `protocol_reference.merchant_id` is bound by the shared upstream identifier
-  // limit. Report the overflow explicitly instead of surfacing it as a generic
-  // request schema failure.
   if (payee.length > MAX_MERCHANT_REFERENCE_LENGTH) {
     throw new AdapterError(
       "MERCHANT_REFERENCE_TOO_LONG",
@@ -89,6 +101,63 @@ export function actionFromHighnote(input: {
       422,
     );
   }
+  return { payee, categoryReference };
+}
+
+function coreCardReferenceHash(agentId: string, paymentCardId: string): `sha256:${string}` {
+  const digest = createHash("sha256")
+    .update(
+      canonicalise({
+        namespace: "inntris-highnote-card-v1",
+        agent_id: agentId,
+        payment_card_id: paymentCardId,
+      }),
+      "utf8",
+    )
+    .digest("hex");
+  return `sha256:${digest}`;
+}
+
+export function corePayloadFromHighnote(input: {
+  request: CollaborativeAuthorizationRequest;
+  rawBody: Uint8Array;
+  agentId: string;
+}): InntrisCoreFinancialPayload {
+  const request = input.request.data.collaborativeAuthorizationRequest;
+  if (request.requestedAmount.currencyCode !== "USD") {
+    throw new AdapterError(
+      "UNSUPPORTED_CURRENCY",
+      "Inntris Core card limits are denominated in USD; non-USD authorisations are declined",
+      422,
+    );
+  }
+  const { payee, categoryReference } = merchantReferences(input.request);
+  const requestRef = `highnote:${request.id}`;
+  return {
+    amount: minorAmountToCanonical(request.requestedAmount.value, "USD"),
+    currency: "USD",
+    payee,
+    merchant_category: categoryReference,
+    provider: "highnote",
+    rail: "card",
+    request_ref: requestRef,
+    highnote_request_id: request.id,
+    highnote_transaction_id: request.transaction.id,
+    credential_reference_hash: coreCardReferenceHash(input.agentId, request.paymentCard.id),
+    source_request_hash: sha256Bytes(input.rawBody),
+  };
+}
+
+export function actionFromHighnote(input: {
+  request: CollaborativeAuthorizationRequest;
+  rawBody: Uint8Array;
+  mandate: MandateRecord;
+  resource: string;
+}): InntrisActionV1 {
+  const request = input.request.data.collaborativeAuthorizationRequest;
+  const merchantId = request.merchantDetails.merchantId;
+  const merchantCategoryCode = request.merchantDetails.categoryCode;
+  const { payee, categoryReference } = merchantReferences(input.request);
   const network = cardNetwork(input.request);
   return InntrisActionV1Schema.parse({
     version: "inntris-action-v1",

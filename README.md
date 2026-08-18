@@ -15,6 +15,11 @@ The adapter implements:
 - offline verification and shared x402 plus card verification vectors
 - structured logs, Prometheus metrics, health endpoints, tests and a container build
 
+It has two explicit authority modes:
+
+- `local`, the original reference mandate and portable-evidence implementation
+- `inntris_core`, an inline execution gate in which Inntris Core is the sole spend-policy authority
+
 ## What this is not
 
 - not a Highnote partnership
@@ -38,6 +43,25 @@ Highnote native controls
 ```
 
 Highnote remains authoritative for the transaction facts it reports and for execution. Inntris is authoritative only for its organisational authority decision and the integrity of the evidence it signs.
+
+### Inntris Core authority mode
+
+`AUTHORITY_MODE=inntris_core` changes the callback path to:
+
+```text
+authenticated Highnote request
+  -> verify configured card-to-agent binding
+  -> build and Ed25519-sign financial_transaction envelope v3
+  -> Inntris Core POST /verify
+  -> on ALLOW, Inntris Core POST /verify-token with consume=true
+  -> return APPROVED only after consumed or same-execution idempotent consumption
+```
+
+The Highnote request ID becomes both the durable Core `request_ref` and the namespaced `execution_ref`. Core policy denials map to Highnote decline codes. A Core timeout, unavailable service, malformed response, missing token or failed consumption returns an explicit `INVALID_TRANSACTION` decline. Core mode rejects `AUTHORIZATION_FAILURE_POLICY=stand_in` and does not permit a downstream policy endpoint.
+
+Core mode does not evaluate the local mandate, produce a locally signed authority decision or emit local evidence as the official receipt. The Core decision audit ID is the authority receipt. On approval, the token-consumption audit ID is the execution-bound receipt.
+
+The configured raw Highnote card ID never enters the signed action payload. The payload carries a context-separated SHA-256 reference instead. The raw source request remains protected by Highnote HMAC verification and is represented in Core by a one-way request hash.
 
 ## Two minute deterministic demo
 
@@ -113,7 +137,9 @@ The process serves:
 - `GET /health/ready`
 - `GET /metrics`
 
-The mandate snapshot is loaded and validated before the server listens. Runtime signing material is read from configuration for this reference implementation. A production design must replace that with managed key custody.
+In `local` mode, the mandate snapshot is loaded and validated before the server listens. In `inntris_core` mode, local signer and mandate settings are not required. The process validates that the Core Ed25519 seed derives the configured public-key fingerprint before it starts. Store that seed only in the deployment secret store and never in an environment file, log, evidence bundle or repository.
+
+Core mode uses `INNTRIS_TIMEOUT_MS` as one deadline shared by `/verify` and `/verify-token`; it is not a separate allowance for each call. The adapter records `/verify`, `/verify-token`, total adapter and source timestamp elapsed fields separately because Highnote's `createdAt` and `transactionTimestamp` are distinct clock references.
 
 ## Documentation
 

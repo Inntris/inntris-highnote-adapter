@@ -16,7 +16,7 @@ import {
   type SignatureEncoding,
 } from "./highnote/index.js";
 import { AdapterMetrics } from "./metrics.js";
-import type { HighnoteAuthorisationProcessor } from "./adapter/processor.js";
+import type { AuthorisationProcessor } from "./adapter/processor.js";
 
 declare module "fastify" {
   interface FastifyRequest {
@@ -25,7 +25,7 @@ declare module "fastify" {
 }
 
 export function buildApp(input: {
-  processor: HighnoteAuthorisationProcessor;
+  processor: AuthorisationProcessor;
   evidenceSink: EvidenceRepository;
   clock: Clock;
   signingSecrets: string[];
@@ -152,9 +152,9 @@ export function buildApp(input: {
         highnoteSignature: signatureHeader ?? "",
       });
       metrics.requestsTotal.inc({ result: processed.response.responseCode });
-      metrics.policyDecisionTotal.inc({ verdict: processed.decision.verdict });
+      metrics.policyDecisionTotal.inc({ verdict: processed.verdict });
       if (processed.replayed) metrics.replayAttemptTotal.inc();
-      if (!processed.replayed) {
+      if (processed.authorityMode === "local" && !processed.replayed) {
         setImmediate(() => {
           void input.evidenceSink
             .write(processed.bundle)
@@ -169,18 +169,56 @@ export function buildApp(input: {
         });
       }
       const latencyMs = performance.now() - started;
+      const highnoteCreatedElapsedMs =
+        input.clock.now().getTime() - Date.parse(highnoteRequest.createdAt);
+      const highnoteTransactionElapsedMs =
+        input.clock.now().getTime() - Date.parse(highnoteRequest.transactionTimestamp);
       metrics.decisionLatencyMs.observe({ result: processed.response.responseCode }, latencyMs);
+      if (processed.authorityMode === "inntris_core") {
+        metrics.coreVerifyLatencyMs.observe(
+          { status: String(processed.verifyStatus) },
+          processed.verifyLatencyMs,
+        );
+        if (processed.consumeLatencyMs !== undefined && processed.consumeStatus !== undefined) {
+          metrics.coreConsumeLatencyMs.observe(
+            { status: String(processed.consumeStatus) },
+            processed.consumeLatencyMs,
+          );
+        }
+        metrics.coreAuthorityTotal.inc({
+          verdict: processed.verdict,
+          consumption: processed.consumptionStatus ?? "not_applicable",
+        });
+      }
       request.log.info(
         {
           request_id: highnoteRequest.id,
-          decision_id: processed.decision.decision_id,
-          action_hash: processed.decision.action_hash,
-          verdict: processed.decision.verdict,
+          authority_mode: processed.authorityMode,
+          action_hash: processed.actionHash,
+          verdict: processed.verdict,
           response_code: processed.response.responseCode,
           latency_ms: latencyMs,
+          adapter_latency_ms: latencyMs,
+          downstream_latency_ms: processed.downstreamLatencyMs,
+          highnote_created_elapsed_ms: highnoteCreatedElapsedMs,
+          highnote_transaction_elapsed_ms: highnoteTransactionElapsedMs,
           replayed: processed.replayed,
           freshness: "valid",
           downstream_outcome: processed.downstreamOutcome,
+          ...(processed.authorityMode === "local"
+            ? { decision_id: processed.decision.decision_id }
+            : {
+                decision_audit_id: processed.decisionAuditId,
+                decision_receipt_url: processed.decisionReceiptUrl,
+                verify_latency_ms: processed.verifyLatencyMs,
+                verify_status: processed.verifyStatus,
+                verify_idempotency_status: processed.verifyIdempotencyStatus,
+                consumption_audit_id: processed.consumptionAuditId,
+                consumption_receipt_url: processed.consumptionReceiptUrl,
+                consumption_latency_ms: processed.consumeLatencyMs,
+                consumption_status: processed.consumptionStatus,
+                violation_code: processed.violationCode,
+              }),
         },
         "Collaborative authorization decided",
       );

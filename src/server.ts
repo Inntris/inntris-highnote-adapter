@@ -5,6 +5,9 @@ import {
   HighnoteAuthorisationProcessor,
   HttpDownstreamAuthorisationClient,
   InMemoryIdempotencyStore,
+  InntrisCoreAuthorisationProcessor,
+  InntrisCoreClient,
+  type AuthorisationProcessor,
 } from "./adapter/index.js";
 import { loadConfig } from "./config.js";
 import { Ed25519SigningProvider, systemClock } from "./contracts/index.js";
@@ -14,37 +17,55 @@ import { AdapterMetrics } from "./metrics.js";
 
 export async function startServer(): Promise<void> {
   const config = loadConfig();
-  const signer = Ed25519SigningProvider.fromBase64UrlSeed(
-    config.signingKeyId,
-    config.signingSeedBase64Url,
-  );
-  const mandateStore = await loadMandateSnapshot(config.mandateSnapshotPath);
   const metrics = new AdapterMetrics();
-  const downstreamClient =
-    config.downstreamUrl === undefined
-      ? undefined
-      : new HttpDownstreamAuthorisationClient(
-          config.downstreamUrl,
-          config.downstreamTimeoutMs,
-          config.downstreamFailurePolicy,
-          {
-            record(result, latencyMs): void {
-              metrics.downstreamProxyTotal.inc({ result });
-              metrics.downstreamLatencyMs.observe({ result }, latencyMs);
-            },
-          },
-        );
-  const processor = new HighnoteAuthorisationProcessor({
-    mandateStore,
-    signer,
-    clock: systemClock,
-    actionResource: config.publicAdapterUrl,
-    idempotencyStore: new InMemoryIdempotencyStore({
-      maxEntries: config.idempotencyMaxEntries,
-      ttlMs: config.idempotencyTtlMs,
-    }),
-    ...(downstreamClient === undefined ? {} : { downstreamClient }),
+  const idempotencyStore = new InMemoryIdempotencyStore({
+    maxEntries: config.idempotencyMaxEntries,
+    ttlMs: config.idempotencyTtlMs,
   });
+  let processor: AuthorisationProcessor;
+  if (config.authorityMode === "inntris_core") {
+    processor = new InntrisCoreAuthorisationProcessor({
+      client: new InntrisCoreClient({
+        apiUrl: config.inntrisApiUrl,
+        agentId: config.inntrisAgentId,
+        privateKeyBase64: config.inntrisPrivateKeyBase64,
+        timeoutMs: config.inntrisTimeoutMs,
+      }),
+      agentId: config.inntrisAgentId,
+      highnoteCardId: config.highnoteCardId,
+      receiptBaseUrl: config.inntrisReceiptBaseUrl,
+      clock: systemClock,
+      idempotencyStore,
+    });
+  } else {
+    const signer = Ed25519SigningProvider.fromBase64UrlSeed(
+      config.signingKeyId,
+      config.signingSeedBase64Url,
+    );
+    const mandateStore = await loadMandateSnapshot(config.mandateSnapshotPath);
+    const downstreamClient =
+      config.downstreamUrl === undefined
+        ? undefined
+        : new HttpDownstreamAuthorisationClient(
+            config.downstreamUrl,
+            config.downstreamTimeoutMs,
+            config.downstreamFailurePolicy,
+            {
+              record(result, latencyMs): void {
+                metrics.downstreamProxyTotal.inc({ result });
+                metrics.downstreamLatencyMs.observe({ result }, latencyMs);
+              },
+            },
+          );
+    processor = new HighnoteAuthorisationProcessor({
+      mandateStore,
+      signer,
+      clock: systemClock,
+      actionResource: config.publicAdapterUrl,
+      idempotencyStore,
+      ...(downstreamClient === undefined ? {} : { downstreamClient }),
+    });
+  }
   const app = buildApp({
     processor,
     evidenceSink: new FileEvidenceSink(config.evidenceOutputDirectory),

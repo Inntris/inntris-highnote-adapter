@@ -17,6 +17,16 @@ const approvedCodes = new Set<CollaborativeAuthorizationResponseCode>([
   "PARTIAL_AMOUNT_APPROVED",
 ]);
 
+export function responseCodeForCoreViolation(
+  violationCode: string,
+): CollaborativeAuthorizationResponseCode {
+  if (violationCode === "per_action_limit_exceeded" || violationCode === "daily_limit_exceeded") {
+    return "EXCEEDS_LIMIT";
+  }
+  if (violationCode === "rate_limit_exceeded") return "EXCEEDS_FREQUENCY";
+  return "INVALID_TRANSACTION";
+}
+
 export function outcomeFromResponse(
   responseInput: unknown,
   expectedTransactionId: string,
